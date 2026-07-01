@@ -38,6 +38,7 @@ const ADMIN_USER = process.env.ADMIN_USER || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const ADMIN_DIR = path.join(process.cwd(), 'src', 'admin');
 const MESSAGE_SEND_DELAY_MS = Number(process.env.MESSAGE_SEND_DELAY_MS || 2000);
+const API_KEY = process.env.API_KEY || '';
 
 const app = express();
 app.use(cors());
@@ -77,6 +78,19 @@ function adminAuth(req, res, next) {
 
   res.set('WWW-Authenticate', 'Basic realm="WP Bot Admin"');
   return res.status(401).send('Autenticacion requerida');
+}
+
+function apiAuth(req, res, next) {
+  if (!API_KEY) {
+    return next();
+  }
+
+  const headerKey = req.header('x-api-key');
+  if (headerKey && headerKey === API_KEY) {
+    return next();
+  }
+
+  return res.status(401).json({ error: 'API key requerida' });
 }
 
 function normalizeJid(to) {
@@ -869,7 +883,7 @@ app.get('/', (_req, res) => {
   });
 });
 
-app.get('/clients', async (_req, res) => {
+app.get('/clients', apiAuth, async (_req, res) => {
   if (isDatabaseEnabled()) {
     return res.json(await listDbClients());
   }
@@ -877,23 +891,23 @@ app.get('/clients', async (_req, res) => {
   return res.json([...sessions.values()].map(sessionSummary));
 });
 
-app.post('/clients', createClientHandler);
+app.post('/clients', apiAuth, createClientHandler);
 
-app.use('/clients/:clientName', ensureSessionForRequest);
+app.use('/clients/:clientName', apiAuth, ensureSessionForRequest);
 
-app.post('/clients/:clientName/start', startSessionHandler);
+app.post('/clients/:clientName/start', apiAuth, startSessionHandler);
 
-app.post('/clients/:clientName/reset', resetSessionHandler);
+app.post('/clients/:clientName/reset', apiAuth, resetSessionHandler);
 
-app.post('/clients/:clientName/aliases', linkAliasHandler);
+app.post('/clients/:clientName/aliases', apiAuth, linkAliasHandler);
 
-app.delete('/clients/:clientName', deleteClientHandler);
+app.delete('/clients/:clientName', apiAuth, deleteClientHandler);
 
-app.get('/clients/:clientName/status', (req, res) => {
+app.get('/clients/:clientName/status', apiAuth, (req, res) => {
   res.json(sessionSummary(req.whatsappSession));
 });
 
-app.get('/clients/:clientName/qr', async (req, res) => {
+app.get('/clients/:clientName/qr', apiAuth, async (req, res) => {
   if (req.whatsappSession.status === 'idle') {
     await connectSession(req.whatsappSession.clientName).catch(() => {});
   }
@@ -901,7 +915,7 @@ app.get('/clients/:clientName/qr', async (req, res) => {
   res.send(qrHtml(req.whatsappSession));
 });
 
-app.get('/clients/:clientName/qr.json', async (req, res) => {
+app.get('/clients/:clientName/qr.json', apiAuth, async (req, res) => {
   if (req.whatsappSession.status === 'idle') {
     await connectSession(req.whatsappSession.clientName).catch(() => {});
   }
@@ -919,7 +933,7 @@ app.get('/clients/:clientName/qr.json', async (req, res) => {
   });
 });
 
-app.get('/clients/:clientName/messages', async (req, res) => {
+app.get('/clients/:clientName/messages', apiAuth, async (req, res) => {
   if (isDatabaseEnabled()) {
     return res.json(await listMessages(req.whatsappSession.id, null, req.query.limit));
   }
@@ -927,7 +941,7 @@ app.get('/clients/:clientName/messages', async (req, res) => {
   return res.json(req.whatsappSession.recentMessages);
 });
 
-app.get('/clients/:clientName/conversations', async (req, res) => {
+app.get('/clients/:clientName/conversations', apiAuth, async (req, res) => {
   if (!isDatabaseEnabled()) {
     return res.status(503).json({ error: 'PostgreSQL no esta configurado' });
   }
@@ -935,7 +949,7 @@ app.get('/clients/:clientName/conversations', async (req, res) => {
   return res.json(await listConversations(req.whatsappSession.id));
 });
 
-app.get('/clients/:clientName/unlinked-lids', async (req, res) => {
+app.get('/clients/:clientName/unlinked-lids', apiAuth, async (req, res) => {
   if (!isDatabaseEnabled()) {
     return res.status(503).json({ error: 'PostgreSQL no esta configurado' });
   }
@@ -943,7 +957,7 @@ app.get('/clients/:clientName/unlinked-lids', async (req, res) => {
   return res.json(await listUnlinkedLidConversations(req.whatsappSession.id));
 });
 
-app.get('/clients/:clientName/conversations/:jid/messages', async (req, res) => {
+app.get('/clients/:clientName/conversations/:jid/messages', apiAuth, async (req, res) => {
   if (!isDatabaseEnabled()) {
     return res.status(503).json({ error: 'PostgreSQL no esta configurado' });
   }
@@ -951,9 +965,9 @@ app.get('/clients/:clientName/conversations/:jid/messages', async (req, res) => 
   return res.json(await listMessages(req.whatsappSession.id, req.params.jid, req.query.limit));
 });
 
-app.post('/clients/:clientName/send', sendMessageHandler);
+app.post('/clients/:clientName/send', apiAuth, sendMessageHandler);
 
-app.post('/clients/:clientName/logout', async (req, res) => {
+app.post('/clients/:clientName/logout', apiAuth, async (req, res) => {
   const session = req.whatsappSession;
   if (!session.sock) return res.status(409).json({ error: 'Socket no iniciado' });
 
@@ -961,25 +975,25 @@ app.post('/clients/:clientName/logout', async (req, res) => {
   res.json({ ok: true, clientId: session.id, clientName: session.clientName });
 });
 
-app.get('/sessions', (_req, res) => {
+app.get('/sessions', apiAuth, (_req, res) => {
   res.json([...sessions.values()].map(sessionSummary));
 });
 
-app.use('/sessions/:sessionId', ensureSessionForRequest);
+app.use('/sessions/:sessionId', apiAuth, ensureSessionForRequest);
 
-app.post('/sessions/:sessionId/start', startSessionHandler);
+app.post('/sessions/:sessionId/start', apiAuth, startSessionHandler);
 
-app.post('/sessions/:sessionId/reset', resetSessionHandler);
+app.post('/sessions/:sessionId/reset', apiAuth, resetSessionHandler);
 
-app.post('/sessions/:sessionId/aliases', linkAliasHandler);
+app.post('/sessions/:sessionId/aliases', apiAuth, linkAliasHandler);
 
-app.delete('/sessions/:sessionId', deleteClientHandler);
+app.delete('/sessions/:sessionId', apiAuth, deleteClientHandler);
 
-app.get('/sessions/:sessionId/status', (req, res) => {
+app.get('/sessions/:sessionId/status', apiAuth, (req, res) => {
   res.json(sessionSummary(req.whatsappSession));
 });
 
-app.get('/sessions/:sessionId/qr', async (req, res) => {
+app.get('/sessions/:sessionId/qr', apiAuth, async (req, res) => {
   if (req.whatsappSession.status === 'idle') {
     await connectSession(req.whatsappSession.id).catch(() => {});
   }
@@ -987,7 +1001,7 @@ app.get('/sessions/:sessionId/qr', async (req, res) => {
   res.send(qrHtml(req.whatsappSession));
 });
 
-app.get('/sessions/:sessionId/qr.json', async (req, res) => {
+app.get('/sessions/:sessionId/qr.json', apiAuth, async (req, res) => {
   if (req.whatsappSession.status === 'idle') {
     await connectSession(req.whatsappSession.id).catch(() => {});
   }
@@ -1005,13 +1019,13 @@ app.get('/sessions/:sessionId/qr.json', async (req, res) => {
   });
 });
 
-app.get('/sessions/:sessionId/messages', (req, res) => {
+app.get('/sessions/:sessionId/messages', apiAuth, (req, res) => {
   res.json(req.whatsappSession.recentMessages);
 });
 
-app.post('/sessions/:sessionId/send', sendMessageHandler);
+app.post('/sessions/:sessionId/send', apiAuth, sendMessageHandler);
 
-app.post('/sessions/:sessionId/logout', async (req, res) => {
+app.post('/sessions/:sessionId/logout', apiAuth, async (req, res) => {
   const session = req.whatsappSession;
   if (!session.sock) return res.status(409).json({ error: 'Socket no iniciado' });
 
@@ -1019,13 +1033,13 @@ app.post('/sessions/:sessionId/logout', async (req, res) => {
   res.json({ ok: true, clientId: session.id, clientName: session.clientName });
 });
 
-app.get('/status', (req, res) => {
+app.get('/status', apiAuth, (req, res) => {
   req.params.sessionId = DEFAULT_SESSION_ID;
   req.whatsappSession = getOrCreateSession(DEFAULT_SESSION_ID);
   res.json(sessionSummary(req.whatsappSession));
 });
 
-app.get('/qr', async (req, res) => {
+app.get('/qr', apiAuth, async (req, res) => {
   const session = getOrCreateSession(DEFAULT_SESSION_ID);
   if (session.status === 'idle') {
     await connectSession(session.id).catch(() => {});
@@ -1034,7 +1048,7 @@ app.get('/qr', async (req, res) => {
   res.send(qrHtml(session));
 });
 
-app.get('/qr.json', async (_req, res) => {
+app.get('/qr.json', apiAuth, async (_req, res) => {
   const session = getOrCreateSession(DEFAULT_SESSION_ID);
   if (session.status === 'idle') {
     await connectSession(session.id).catch(() => {});
@@ -1053,16 +1067,16 @@ app.get('/qr.json', async (_req, res) => {
   });
 });
 
-app.get('/messages', (_req, res) => {
+app.get('/messages', apiAuth, (_req, res) => {
   res.json(getOrCreateSession(DEFAULT_SESSION_ID).recentMessages);
 });
 
-app.post('/send', (req, res) => {
+app.post('/send', apiAuth, (req, res) => {
   req.whatsappSession = getOrCreateSession(DEFAULT_SESSION_ID);
   return sendMessageHandler(req, res);
 });
 
-app.post('/logout', async (req, res) => {
+app.post('/logout', apiAuth, async (req, res) => {
   req.whatsappSession = getOrCreateSession(DEFAULT_SESSION_ID);
   const session = req.whatsappSession;
   if (!session.sock) return res.status(409).json({ error: 'Socket no iniciado' });

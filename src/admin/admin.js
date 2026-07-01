@@ -4,7 +4,8 @@ const state = {
   selectedConversationJid: null,
   serverInfo: null,
   search: '',
-  refreshTimer: null
+  refreshTimer: null,
+  apiKey: ''
 };
 
 const els = {
@@ -74,6 +75,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: {
       'Content-Type': 'application/json',
+      ...(state.apiKey ? { 'x-api-key': state.apiKey } : {}),
       ...(options.headers || {})
     },
     ...options
@@ -88,6 +90,31 @@ async function api(path, options = {}) {
   }
 
   return body;
+}
+
+async function loadApiKey() {
+  try {
+    const config = await api('/api/admin/config');
+    if (config?.apiKey) {
+      state.apiKey = config.apiKey;
+    }
+  } catch {
+    state.apiKey = '';
+  }
+}
+
+  return body;
+}
+
+async function loadApiKey() {
+  try {
+    const config = await api('/api/admin/config');
+    if (config?.apiKey) {
+      state.apiKey = config.apiKey;
+    }
+  } catch {
+    state.apiKey = '';
+  }
 }
 
 function statusLabel(client) {

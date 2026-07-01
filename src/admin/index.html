@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WP Bot Admin</title>
+    <link rel="stylesheet" href="/admin/admin.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>WP Bot Admin</h1>
+        <p id="system-status">Conectando...</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="db-badge" class="badge">DB</span>
+        <button id="refresh-button" type="button">Actualizar</button>
+      </div>
+    </header>
+
+    <section class="summary-grid" aria-label="Resumen">
+      <div class="summary-card">
+        <span>Clientes</span>
+        <strong id="total-clients">0</strong>
+      </div>
+      <div class="summary-card">
+        <span>Conectados</span>
+        <strong id="connected-clients">0</strong>
+      </div>
+      <div class="summary-card">
+        <span>Requieren QR</span>
+        <strong id="qr-clients">0</strong>
+      </div>
+      <div class="summary-card">
+        <span>Con error</span>
+        <strong id="error-clients">0</strong>
+      </div>
+    </section>
+
+    <main class="layout">
+      <aside class="panel clients-panel">
+        <div class="panel-title">
+          <div>
+            <h2>Clientes</h2>
+            <p>Sesiones de WhatsApp</p>
+          </div>
+        </div>
+
+        <form id="create-client-form" class="create-form">
+          <label for="client-name-input">Nuevo cliente</label>
+          <div class="inline-row">
+            <input id="client-name-input" name="clientName" placeholder="Ej: Ventas Norte" autocomplete="off" required>
+            <button type="submit">Crear</button>
+          </div>
+        </form>
+
+        <label class="field-label" for="client-search-input">Buscar</label>
+        <input id="client-search-input" placeholder="Filtrar clientes" autocomplete="off">
+
+        <div id="clients-list" class="clients-list"></div>
+      </aside>
+
+      <section class="workspace">
+        <div id="empty-state" class="empty-state panel">
+          <h2>Selecciona un cliente</h2>
+          <p>Desde aca podes vincular WhatsApp, enviar mensajes y revisar conversaciones guardadas.</p>
+        </div>
+
+        <div id="client-detail" class="client-detail hidden">
+          <section class="panel hero-panel">
+            <div class="client-heading">
+              <div>
+                <span class="eyebrow">Cliente seleccionado</span>
+                <h2 id="selected-client-title"></h2>
+                <p id="selected-client-meta"></p>
+              </div>
+              <span id="selected-client-status" class="status-pill"></span>
+            </div>
+
+            <div id="last-error-box" class="alert hidden"></div>
+
+            <div class="action-groups">
+              <div>
+                <h3>Conexion</h3>
+                <div class="actions">
+                  <button id="start-client-button" type="button">Iniciar</button>
+                  <button id="qr-client-button" type="button">Ver QR</button>
+                  <button id="reset-client-button" type="button">Resetear</button>
+                  <button id="logout-client-button" type="button">Cerrar sesion</button>
+                </div>
+              </div>
+              <div>
+                <h3>Administracion</h3>
+                <div class="actions">
+                  <button id="delete-client-button" class="danger-button" type="button">Eliminar cliente</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="qr-box" class="qr-box hidden">
+              <iframe id="qr-frame" title="QR WhatsApp"></iframe>
+            </div>
+          </section>
+
+          <section id="lid-questions-panel" class="panel hidden">
+            <div class="panel-title">
+              <div>
+                <h2>Preguntas pendientes</h2>
+                <p>WhatsApp envio identificadores LID que necesitan un numero</p>
+              </div>
+              <button id="load-lids-button" type="button">Revisar</button>
+            </div>
+            <div id="lid-questions-list" class="lid-questions-list"></div>
+          </section>
+
+          <section class="content-grid">
+            <div class="panel">
+              <div class="panel-title">
+                <div>
+                  <h2>Enviar mensaje</h2>
+                  <p>Usa el cliente seleccionado como remitente</p>
+                </div>
+              </div>
+              <form id="send-message-form" class="message-form">
+                <label for="message-to-input">Destino</label>
+                <input id="message-to-input" name="to" placeholder="5493885104530" required>
+                <label for="message-text-input">Mensaje</label>
+                <textarea id="message-text-input" name="message" placeholder="Escribi el mensaje" rows="5" required></textarea>
+                <button type="submit">Enviar mensaje</button>
+              </form>
+            </div>
+
+            <div class="panel">
+              <div class="panel-title">
+                <div>
+                  <h2>Unificar conversacion</h2>
+                  <p>Asocia un LID de WhatsApp con un numero</p>
+                </div>
+              </div>
+              <form id="link-alias-form" class="message-form">
+                <label for="alias-lid-input">LID o alias</label>
+                <input id="alias-lid-input" name="lid" placeholder="93445687386215@lid">
+                <label for="alias-phone-input">Numero canonico</label>
+                <input id="alias-phone-input" name="phone" placeholder="5493885104530">
+                <button type="submit">Unificar</button>
+              </form>
+            </div>
+          </section>
+
+          <section class="content-grid">
+            <div class="panel">
+              <div class="panel-title">
+                <div>
+                  <h2>Conversaciones</h2>
+                  <p id="conversation-context">Historial guardado en PostgreSQL</p>
+                </div>
+                <button id="load-conversations-button" type="button">Cargar</button>
+              </div>
+              <div id="conversations-list" class="conversations-list"></div>
+            </div>
+          </section>
+
+          <section class="panel messages-panel">
+            <div class="panel-title">
+              <div>
+                <h2>Mensajes</h2>
+                <p id="messages-context">Ultimos mensajes del cliente</p>
+              </div>
+              <button id="load-messages-button" type="button">Cargar</button>
+            </div>
+            <div id="messages-list" class="messages-list"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/admin/admin.js"></script>
+  </body>
+</html>

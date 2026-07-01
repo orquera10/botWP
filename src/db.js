@@ -198,6 +198,24 @@ export async function shouldAskForLidVerification(clientId, lidJid) {
   return Boolean(result.rows[0]?.shouldAsk);
 }
 
+export async function hasRecentLidVerificationRequest(clientId, lidJid) {
+  if (!pool || !clientId || !lidJid?.endsWith('@lid')) return false;
+
+  const result = await pool.query(
+    `
+      select 1
+      from lid_verification_requests
+      where client_id = $1
+        and lid_jid = $2
+        and last_requested_at > now() - interval '7 days'
+      limit 1
+    `,
+    [clientId, lidJid]
+  );
+
+  return result.rowCount > 0;
+}
+
 async function inferCanonicalForUnknownLid(clientId, lidJid) {
   if (!lidJid?.endsWith('@lid')) return null;
 

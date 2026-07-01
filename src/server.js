@@ -16,6 +16,7 @@ import {
   initDatabase,
   isDatabaseEnabled,
   deleteDbClient,
+  hasRecentLidVerificationRequest,
   linkConversationAlias,
   listConversations,
   listDbClients,
@@ -238,6 +239,16 @@ function normalizeAliasJid(value) {
   return `${digits}@s.whatsapp.net`;
 }
 
+function extractPhoneJidFromVerificationReply(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw.includes('@lid')) return null;
+
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 10 || digits.length > 15) return null;
+
+  return `${digits}@s.whatsapp.net`;
+}
+
 async function linkClientAlias(session, aliasJid, canonicalJid) {
   const alias = normalizeAliasJid(aliasJid);
   const canonical = normalizeAliasJid(canonicalJid);
@@ -359,6 +370,18 @@ async function connectSession(clientName) {
           });
         } else {
           await saveIncomingMessage(session, payload);
+          if (payload.from?.endsWith('@lid')) {
+            const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
+            if (canonicalJid && await hasRecentLidVerificationRequest(session.id, payload.from)) {
+              await linkClientAlias(session, payload.from, canonicalJid);
+              emitAdminEvent('conversation:update', { clientId: session.id });
+              logger.info(
+                { clientId: session.id, clientName: session.clientName, lid: payload.from, canonicalJid },
+                'LID relacionado automaticamente por respuesta de verificacion'
+              );
+            }
+          }
+
           if (payload.from?.endsWith('@lid') && await shouldAskForLidVerification(session.id, payload.from)) {
             const verificationText = buildLidVerificationMessage(session);
             const result = await session.sock.sendMessage(payload.from, { text: verificationText });

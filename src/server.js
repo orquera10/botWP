@@ -835,10 +835,6 @@ app.get('/api/admin/config', adminAuth, (_req, res) => {
   res.json({ apiKey: API_KEY || '' });
 });
 
-app.get('/api/admin/config', adminAuth, (_req, res) => {
-  res.json({ apiKey: API_KEY || '' });
-});
-
 app.get('/admin/events', adminAuth, (req, res) => {
   res.set({
     'Content-Type': 'text/event-stream',

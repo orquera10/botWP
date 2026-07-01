@@ -72,13 +72,14 @@ function showToast(message) {
 }
 
 async function api(path, options = {}) {
+  const { headers = {}, ...fetchOptions } = options;
   const response = await fetch(path, {
+    ...fetchOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(state.apiKey ? { 'x-api-key': state.apiKey } : {}),
-      ...(options.headers || {})
-    },
-    ...options
+      ...headers
+    }
   });
 
   const contentType = response.headers.get('content-type') || '';
@@ -88,20 +89,6 @@ async function api(path, options = {}) {
     const message = typeof body === 'string' ? body : body.error || 'Error de API';
     throw new Error(message);
   }
-
-  return body;
-}
-
-async function loadApiKey() {
-  try {
-    const config = await api('/api/admin/config');
-    if (config?.apiKey) {
-      state.apiKey = config.apiKey;
-    }
-  } catch {
-    state.apiKey = '';
-  }
-}
 
   return body;
 }
@@ -532,7 +519,10 @@ els.loadConversationsButton.addEventListener('click', () => loadConversations().
 els.loadLidsButton.addEventListener('click', () => loadUnlinkedLids().catch((error) => showToast(error.message)));
 els.loadMessagesButton.addEventListener('click', () => loadMessages().catch((error) => showToast(error.message)));
 
-refreshAll().catch((error) => showToast(error.message));
-connectRealtimeEvents();
-loadApiKey().catch(() => {});
+loadApiKey()
+  .catch(() => {})
+  .finally(() => {
+    refreshAll().catch((error) => showToast(error.message));
+    connectRealtimeEvents();
+  });
 setInterval(() => loadClients().catch(() => {}), 30000);

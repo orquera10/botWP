@@ -534,4 +534,5 @@ els.loadMessagesButton.addEventListener('click', () => loadMessages().catch((err
 
 refreshAll().catch((error) => showToast(error.message));
 connectRealtimeEvents();
+loadApiKey().catch(() => {});
 setInterval(() => loadClients().catch(() => {}), 30000);

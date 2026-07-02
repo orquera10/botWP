@@ -178,9 +178,11 @@ Configura:
 ```env
 WP_RESERVAS_API_URL=https://mediumslateblue-pony-524766.hostingersite.com/wp_reservas_api.php
 WP_RESERVAS_API_KEY=
+RESERVATION_FLOW_TIMEOUT_MINUTES=120
 ```
 
 Si `WP_RESERVAS_API_KEY` queda vacio, usa `API_KEY`. El flujo se activa cuando el cliente escribe algo como `reservar`, `turno`, `cancha` o `futbol`.
+Si el cliente deja una reserva incompleta sin responder, el estado vence despues de `RESERVATION_FLOW_TIMEOUT_MINUTES` minutos y el bot pide empezar de nuevo.
 
 El bot:
 
@@ -189,6 +191,7 @@ El bot:
 - consulta canchas, terminos, disponibilidad y turnos contra `wp_reservas_api.php`
 - pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
 - crea la reserva y devuelve el link de pago de Mercado Pago
+- responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno` mostrando hasta 5 reservas futuras del cliente
 
 ## PostgreSQL
 

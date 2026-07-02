@@ -8,7 +8,23 @@ import {
 } from './wpReservasApi.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
+const QUERY_TRIGGER_WORDS = [
+  'mis reservas',
+  'mis turnos',
+  'ver reservas',
+  'ver turnos',
+  'consultar reserva',
+  'consultar turno',
+  'ultimas reservas',
+  'ultimos turnos',
+  'proximas reservas'
+];
 const CANCEL_WORDS = ['cancelar', 'salir', 'menu', 'reiniciar'];
+const DEFAULT_FLOW_TIMEOUT_MINUTES = 120;
+const FLOW_TIMEOUT_MINUTES = Math.max(
+  1,
+  Number(process.env.RESERVATION_FLOW_TIMEOUT_MINUTES || DEFAULT_FLOW_TIMEOUT_MINUTES)
+);
 
 function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
@@ -35,6 +51,11 @@ function normalizeText(text) {
 function hasReservationIntent(text) {
   const normalized = normalizeText(text);
   return TRIGGER_WORDS.some((word) => normalized.includes(word));
+}
+
+function hasQueryIntent(text) {
+  const normalized = normalizeText(text);
+  return QUERY_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
 }
 
 function wantsCancel(text) {
@@ -135,8 +156,34 @@ function compactTerms(terminos) {
   ].filter(Boolean).join('\n');
 }
 
+function formatTurnos(turnos) {
+  return turnos
+    .slice(0, 5)
+    .map((turno, index) => {
+      const estado = turno.estado ? ` - ${turno.estado}` : '';
+      const senia = Number(turno.senia || 0);
+      const pago = senia > 0 ? ` - senia $${senia}` : '';
+      return [
+        `${index + 1}. ${turno.cancha}`,
+        `${turno.fecha_label || turno.fecha}`,
+        `${turno.hora_inicio} a ${turno.hora_fin}${estado}${pago}`,
+        `Ticket: ${turno.ticket_id}`
+      ].join(' - ');
+    })
+    .join('\n');
+}
+
 function buildState(step, data = {}) {
   return { step, data, updatedAt: new Date().toISOString() };
+}
+
+function isExpired(state) {
+  if (!state?.updatedAt) return false;
+
+  const updatedAt = new Date(state.updatedAt).getTime();
+  if (!Number.isFinite(updatedAt)) return false;
+
+  return Date.now() - updatedAt > FLOW_TIMEOUT_MINUTES * 60 * 1000;
 }
 
 async function identifyClient(phone) {
@@ -179,6 +226,44 @@ async function startFlow({ phone, pushName }) {
   };
 }
 
+async function startQueryFlow({ phone }) {
+  try {
+    const result = await consultarTurnos({ telefono: phone, futuros: 1, limite: 5 });
+    const turnos = result.turnos || [];
+    const cliente = result.cliente || {};
+
+    if (!turnos.length) {
+      return {
+        state: null,
+        replies: [
+          cliente.nombre
+            ? `${cliente.nombre}, no encontre reservas futuras para este telefono.`
+            : 'No encontre reservas futuras para este telefono.'
+        ]
+      };
+    }
+
+    return {
+      state: null,
+      replies: [
+        [
+          cliente.nombre ? `${cliente.nombre}, estas son tus proximas reservas:` : 'Estas son tus proximas reservas:',
+          formatTurnos(turnos)
+        ].join('\n')
+      ]
+    };
+  } catch (error) {
+    if (error.status === 404) {
+      return {
+        state: null,
+        replies: ['No encontre un cliente registrado con ese telefono.']
+      };
+    }
+
+    throw error;
+  }
+}
+
 async function askDisponibilidad(data) {
   const slots = await consultarDisponibilidad({
     fecha: data.fecha,
@@ -210,19 +295,66 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
   if (wantsCancel(text)) {
     return {
       state: null,
-      replies: ['Listo, cancele el flujo de reserva. Cuando quieras reservar, escribime "reservar".']
+      replies: ['Listo, cancele el flujo actual. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas".']
+    };
+  }
+
+  if (state && isExpired(state)) {
+    if (!hasReservationIntent(text) && !hasQueryIntent(text)) {
+      return {
+        state: null,
+        replies: [
+          `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas".`
+        ]
+      };
+    }
+
+    if (hasQueryIntent(text)) {
+      const phone = phoneFromJid(canonicalJid);
+      if (!phone) {
+        return {
+          state: buildState('ask_phone', { pushName, intent: 'query' }),
+          replies: ['Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+        };
+      }
+
+      const restartedQuery = await startQueryFlow({ phone });
+      return {
+        state: restartedQuery.state,
+        replies: [
+          `La conversacion anterior habia vencido despues de ${FLOW_TIMEOUT_MINUTES} minutos sin actividad.`,
+          ...restartedQuery.replies
+        ]
+      };
+    }
+
+    const restarted = await startFlow({ phone: phoneFromJid(canonicalJid), pushName });
+    return {
+      state: restarted.state,
+      replies: [
+        `La reserva anterior habia vencido despues de ${FLOW_TIMEOUT_MINUTES} minutos sin actividad. Empecemos de nuevo.`,
+        ...restarted.replies
+      ]
     };
   }
 
   if (!state) {
-    if (!hasReservationIntent(text)) return { state: null, replies: [] };
+    if (!hasReservationIntent(text) && !hasQueryIntent(text)) return { state: null, replies: [] };
 
     const phone = phoneFromJid(canonicalJid);
     if (!phone) {
       return {
-        state: buildState('ask_phone', { pushName }),
-        replies: ['Para empezar la reserva necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+        state: buildState('ask_phone', { pushName, intent: hasQueryIntent(text) ? 'query' : 'reservation' }),
+        replies: [
+          hasQueryIntent(text)
+            ? 'Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
+            : 'Para empezar la reserva necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
+        ]
       };
+    }
+
+    if (hasQueryIntent(text)) {
+      return startQueryFlow({ phone });
     }
 
     return startFlow({ phone, pushName });
@@ -230,12 +362,28 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
 
   const data = state.data || {};
 
+  if (hasQueryIntent(text)) {
+    const phone = data.phone || phoneFromJid(canonicalJid);
+    if (!phone) {
+      return {
+        state: buildState('ask_phone', { pushName, intent: 'query' }),
+        replies: ['Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+      };
+    }
+
+    return startQueryFlow({ phone });
+  }
+
   if (state.step === 'ask_phone') {
     if (!looksLikePhone(text)) {
       return {
         state,
         replies: ['Pasame el numero con codigo de pais, solo numeros o con +. Ejemplo: 5493881234567']
       };
+    }
+
+    if (data.intent === 'query') {
+      return startQueryFlow({ phone: onlyDigits(text) });
     }
 
     return startFlow({ phone: onlyDigits(text), pushName: data.pushName || pushName });

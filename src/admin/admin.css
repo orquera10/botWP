@@ -245,13 +245,24 @@ p {
   font-weight: 700;
 }
 
-.clients-list,
+.clients-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .conversations-list,
 .messages-list,
 .lid-questions-list {
   display: grid;
   gap: 8px;
   margin-top: 12px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .client-item,
@@ -262,6 +273,9 @@ p {
   background: var(--panel-soft);
   border-radius: 6px;
   padding: 10px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .client-item {
@@ -290,6 +304,7 @@ p {
 .message-title {
   font-weight: 700;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .client-meta,
@@ -300,6 +315,7 @@ p {
   font-size: 13px;
   margin-top: 4px;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .status-pill {

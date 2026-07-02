@@ -13,9 +13,12 @@ import baileys, {
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import {
+  clearBotFlowState,
   initDatabase,
   isDatabaseEnabled,
   deleteDbClient,
+  getBotFlowState,
+  getCanonicalConversationJid,
   hasRecentLidVerificationRequest,
   linkConversationAlias,
   listConversations,
@@ -23,11 +26,13 @@ import {
   listMessages,
   listUnlinkedLidConversations,
   saveIncomingMessage,
+  saveBotFlowState,
   saveOutgoingMessage,
   shouldAskForLidVerification,
   updateMessageDeliveryStatus,
   upsertClient
 } from './db.js';
+import { handleReservationFlow } from './reservationFlow.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const LEGACY_SESSION_DIR = process.env.SESSION_DIR || 'sessions/whatsapp';
@@ -227,6 +232,27 @@ async function postWebhook(session, payload) {
   }
 }
 
+async function sendBotText(session, to, text) {
+  if (!session.sock || session.status !== 'open' || !text) return null;
+
+  const result = await session.sock.sendMessage(to, { text, contextInfo: {} });
+  await saveOutgoingMessage(session, { to, text, result });
+  emitAdminEvent('message:new', {
+    clientId: session.id,
+    direction: 'outgoing',
+    message: {
+      clientId: session.id,
+      clientName: session.clientName,
+      id: result?.key?.id,
+      from: session.sock?.user?.id || null,
+      to,
+      text
+    }
+  });
+
+  return result;
+}
+
 function normalizeAliasJid(value) {
   if (!value) return null;
   const raw = String(value).trim();
@@ -370,10 +396,22 @@ async function connectSession(clientName) {
           });
         } else {
           await saveIncomingMessage(session, payload);
+          let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+          let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
+          let migratedReservationState = null;
+
           if (payload.from?.endsWith('@lid')) {
             const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
-            if (canonicalJid && await hasRecentLidVerificationRequest(session.id, payload.from)) {
+            if (
+              canonicalJid &&
+              (reservationState?.step === 'ask_phone' || await hasRecentLidVerificationRequest(session.id, payload.from))
+            ) {
               await linkClientAlias(session, payload.from, canonicalJid);
+              if (reservationState && canonicalConversationJid !== canonicalJid) {
+                migratedReservationState = reservationState;
+                await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+              }
+              canonicalConversationJid = canonicalJid;
               emitAdminEvent('conversation:update', { clientId: session.id });
               logger.info(
                 { clientId: session.id, clientName: session.clientName, lid: payload.from, canonicalJid },
@@ -382,26 +420,30 @@ async function connectSession(clientName) {
             }
           }
 
-          if (payload.from?.endsWith('@lid') && await shouldAskForLidVerification(session.id, payload.from)) {
-            const verificationText = buildLidVerificationMessage(session);
-            const result = await session.sock.sendMessage(payload.from, { text: verificationText });
-            await saveOutgoingMessage(session, {
-              to: payload.from,
-              text: verificationText,
-              result
-            });
-            emitAdminEvent('message:new', {
-              clientId: session.id,
-              direction: 'outgoing',
-              message: {
-                clientId: session.id,
-                clientName: session.clientName,
-                id: result?.key?.id,
-                from: session.sock?.user?.id || null,
-                to: payload.from,
-                text: verificationText
-              }
-            });
+          reservationState = migratedReservationState || await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
+          const flowResult = await handleReservationFlow({
+            state: reservationState,
+            text: payload.text,
+            canonicalJid: canonicalConversationJid,
+            pushName: payload.pushName
+          });
+
+          if (flowResult.state) {
+            await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', flowResult.state);
+          } else if (reservationState) {
+            await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+          }
+
+          for (const reply of flowResult.replies || []) {
+            await sendBotText(session, payload.from, reply);
+          }
+
+          if (
+            (!flowResult.replies || flowResult.replies.length === 0) &&
+            payload.from?.endsWith('@lid') &&
+            await shouldAskForLidVerification(session.id, payload.from)
+          ) {
+            await sendBotText(session, payload.from, buildLidVerificationMessage(session));
           }
           emitAdminEvent('message:new', {
             clientId: session.id,

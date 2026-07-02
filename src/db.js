@@ -90,6 +90,16 @@ export async function initDatabase() {
       created_at timestamptz not null default now(),
       primary key (client_id, lid_jid)
     );
+
+    create table if not exists bot_flow_states (
+      client_id text not null references clients(id) on delete cascade,
+      jid text not null,
+      flow_name text not null,
+      state jsonb not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (client_id, jid, flow_name)
+    );
   `);
 }
 
@@ -156,6 +166,11 @@ async function resolveConversationJid(clientId, jid) {
   );
 
   return result.rows[0]?.canonical_jid || jid;
+}
+
+export async function getCanonicalConversationJid(clientId, jid) {
+  if (!pool || !clientId || !jid) return jid;
+  return resolveConversationJid(clientId, jid);
 }
 
 export async function isConversationAliasLinked(clientId, aliasJid) {
@@ -508,4 +523,44 @@ export async function listMessages(clientId, jid, limit = 100) {
   );
 
   return result.rows;
+}
+
+export async function getBotFlowState(clientId, jid, flowName) {
+  if (!pool || !clientId || !jid || !flowName) return null;
+
+  const result = await pool.query(
+    `
+      select state
+      from bot_flow_states
+      where client_id = $1 and jid = $2 and flow_name = $3
+      limit 1
+    `,
+    [clientId, jid, flowName]
+  );
+
+  return result.rows[0]?.state || null;
+}
+
+export async function saveBotFlowState(clientId, jid, flowName, state) {
+  if (!pool || !clientId || !jid || !flowName) return;
+
+  await pool.query(
+    `
+      insert into bot_flow_states (client_id, jid, flow_name, state, updated_at)
+      values ($1, $2, $3, $4, now())
+      on conflict (client_id, jid, flow_name) do update set
+        state = excluded.state,
+        updated_at = now()
+    `,
+    [clientId, jid, flowName, JSON.stringify(state)]
+  );
+}
+
+export async function clearBotFlowState(clientId, jid, flowName) {
+  if (!pool || !clientId || !jid || !flowName) return;
+
+  await pool.query(
+    'delete from bot_flow_states where client_id = $1 and jid = $2 and flow_name = $3',
+    [clientId, jid, flowName]
+  );
 }

@@ -169,6 +169,27 @@ WEBHOOK_URL=https://tu-servidor.com/webhook
 
 El webhook incluye `clientId` y `clientName` para que sepas a que cliente pertenece el mensaje.
 
+## Flujo de reservas por WhatsApp
+
+El bot puede tomar reservas conversando con el cliente y usando la API PHP del sistema de turnos.
+
+Configura:
+
+```env
+WP_RESERVAS_API_URL=https://mediumslateblue-pony-524766.hostingersite.com/wp_reservas_api.php
+WP_RESERVAS_API_KEY=
+```
+
+Si `WP_RESERVAS_API_KEY` queda vacio, usa `API_KEY`. El flujo se activa cuando el cliente escribe algo como `reservar`, `turno`, `cancha` o `futbol`.
+
+El bot:
+
+- identifica el telefono desde el JID de WhatsApp cuando viene como `@s.whatsapp.net`
+- si el mensaje viene como `@lid`, pide el telefono y relaciona ese `@lid` con el numero
+- consulta canchas, terminos, disponibilidad y turnos contra `wp_reservas_api.php`
+- pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
+- crea la reserva y devuelve el link de pago de Mercado Pago
+
 ## PostgreSQL
 
 Configura `.env` con tu conexion:

@@ -192,6 +192,8 @@ El bot:
 - pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
 - crea la reserva y devuelve el link de pago de Mercado Pago
 - responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno` mostrando hasta 5 reservas futuras del cliente
+- registra clientes nuevos cuando escriben `registrarme` o cuando quieren reservar con un telefono no registrado
+- si el email o nombre ya existen en la API, el endpoint `crear_cliente` puede actualizar/asociar el telefono en vez de crear un duplicado
 
 ## PostgreSQL
 

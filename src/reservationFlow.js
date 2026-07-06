@@ -1,6 +1,8 @@
 import {
+  consultarCliente,
   consultarDisponibilidad,
   consultarTurnos,
+  crearCliente,
   crearReserva,
   listarCanchas,
   listarTerminos,
@@ -18,6 +20,14 @@ const QUERY_TRIGGER_WORDS = [
   'ultimas reservas',
   'ultimos turnos',
   'proximas reservas'
+];
+const REGISTER_TRIGGER_WORDS = [
+  'registrarme',
+  'registro',
+  'crear usuario',
+  'crear cliente',
+  'alta cliente',
+  'alta usuario'
 ];
 const CANCEL_WORDS = ['cancelar', 'salir', 'menu', 'reiniciar'];
 const DEFAULT_FLOW_TIMEOUT_MINUTES = 120;
@@ -56,6 +66,11 @@ function hasReservationIntent(text) {
 function hasQueryIntent(text) {
   const normalized = normalizeText(text);
   return QUERY_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
+}
+
+function hasRegisterIntent(text) {
+  const normalized = normalizeText(text);
+  return REGISTER_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
 }
 
 function wantsCancel(text) {
@@ -188,7 +203,11 @@ function isExpired(state) {
 
 async function identifyClient(phone) {
   try {
-    const result = await consultarTurnos({ telefono: phone, futuros: 1, limite: 3 });
+    const result = await consultarCliente({ telefono: phone });
+    if (!result.exists) {
+      return { found: false, cliente: null, turnos: [] };
+    }
+
     return {
       found: true,
       cliente: result.cliente || null,
@@ -202,10 +221,36 @@ async function identifyClient(phone) {
   }
 }
 
+async function identifyClientByEmail(email) {
+  try {
+    const result = await consultarCliente({ email });
+    if (!result.exists) {
+      return { found: false, cliente: null };
+    }
+
+    return { found: true, cliente: result.cliente || null };
+  } catch (error) {
+    if (error.status === 404) {
+      return { found: false, cliente: null };
+    }
+    throw error;
+  }
+}
+
 async function startFlow({ phone, pushName }) {
   const canchas = await listarCanchas();
   const identity = phone ? await identifyClient(phone) : { found: false, cliente: null, turnos: [] };
   const cliente = identity.cliente || {};
+
+  if (phone && !identity.found) {
+    return startRegisterFlow({
+      phone,
+      pushName,
+      after: 'reservation',
+      intro: 'No encontre tu telefono registrado. Para poder reservar, primero necesito darte de alta.'
+    });
+  }
+
   const data = {
     phone,
     nombre: cliente.nombre || pushName || '',
@@ -222,6 +267,62 @@ async function startFlow({ phone, pushName }) {
     state: buildState('ask_cancha', data),
     replies: [
       `${greeting}\n\nElegí la cancha respondiendo con el numero:\n${formatCanchas(canchas)}`
+    ]
+  };
+}
+
+function startRegisterFlow({ phone, pushName, after = 'menu', intro = 'Te ayudo a registrarte.' }) {
+  return {
+    state: buildState('ask_register_name', {
+      phone,
+      pushName,
+      after
+    }),
+    replies: [`${intro}\nPasame tu nombre completo.`]
+  };
+}
+
+async function finishRegisterFlow(data) {
+  const emailIdentity = await identifyClientByEmail(data.email);
+  const created = await crearCliente({
+    nombre: data.nombre,
+    email: data.email,
+    telefono: data.phone
+  });
+  const cliente = created.cliente || emailIdentity.cliente || {};
+  const updatedByExistingEmail = emailIdentity.found && !created.created;
+
+  if (data.after === 'reservation') {
+    const canchas = await listarCanchas();
+    return {
+      state: buildState('ask_cancha', {
+        phone: data.phone,
+        nombre: cliente.nombre || data.nombre,
+        email: cliente.email || data.email,
+        existingClient: true,
+        canchas
+      }),
+      replies: [
+        [
+          updatedByExistingEmail
+            ? 'Listo, encontre ese email y actualice/asocie el telefono para continuar.'
+            : created.created
+              ? 'Listo, ya te registre para poder reservar.'
+              : 'Listo, ya encontre tus datos para continuar.',
+          `ElegÃ­ la cancha respondiendo con el numero:\n${formatCanchas(canchas)}`
+        ].join('\n\n')
+      ]
+    };
+  }
+
+  return {
+    state: null,
+    replies: [
+      updatedByExistingEmail
+        ? 'Listo, encontre ese email y actualice/asocie tu telefono.'
+        : created.created
+          ? 'Listo, ya quedaste registrado.'
+          : 'Listo, tus datos ya estaban registrados.'
     ]
   };
 }
@@ -295,16 +396,16 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
   if (wantsCancel(text)) {
     return {
       state: null,
-      replies: ['Listo, cancele el flujo actual. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas".']
+      replies: ['Listo, cancele el flujo actual. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas". Para registrarte, escribime "registrarme".']
     };
   }
 
   if (state && isExpired(state)) {
-    if (!hasReservationIntent(text) && !hasQueryIntent(text)) {
+    if (!hasReservationIntent(text) && !hasQueryIntent(text) && !hasRegisterIntent(text)) {
       return {
         state: null,
         replies: [
-          `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas".`
+          `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas". Para registrarte, escribime "registrarme".`
         ]
       };
     }
@@ -328,6 +429,18 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
       };
     }
 
+    if (hasRegisterIntent(text)) {
+      const phone = phoneFromJid(canonicalJid);
+      if (!phone) {
+        return {
+          state: buildState('ask_phone', { pushName, intent: 'register' }),
+          replies: ['Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+        };
+      }
+
+      return startRegisterFlow({ phone, pushName });
+    }
+
     const restarted = await startFlow({ phone: phoneFromJid(canonicalJid), pushName });
     return {
       state: restarted.state,
@@ -339,15 +452,20 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
   }
 
   if (!state) {
-    if (!hasReservationIntent(text) && !hasQueryIntent(text)) return { state: null, replies: [] };
+    if (!hasReservationIntent(text) && !hasQueryIntent(text) && !hasRegisterIntent(text)) return { state: null, replies: [] };
 
     const phone = phoneFromJid(canonicalJid);
     if (!phone) {
       return {
-        state: buildState('ask_phone', { pushName, intent: hasQueryIntent(text) ? 'query' : 'reservation' }),
+        state: buildState('ask_phone', {
+          pushName,
+          intent: hasQueryIntent(text) ? 'query' : hasRegisterIntent(text) ? 'register' : 'reservation'
+        }),
         replies: [
           hasQueryIntent(text)
             ? 'Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
+            : hasRegisterIntent(text)
+              ? 'Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
             : 'Para empezar la reserva necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
         ]
       };
@@ -355,6 +473,19 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
 
     if (hasQueryIntent(text)) {
       return startQueryFlow({ phone });
+    }
+
+    if (hasRegisterIntent(text)) {
+      const identity = await identifyClient(phone);
+      if (identity.found) {
+        const cliente = identity.cliente || {};
+        return {
+          state: null,
+          replies: [`Ya estas registrado${cliente.nombre ? ` como ${cliente.nombre}` : ''}. Para reservar escribime "reservar".`]
+        };
+      }
+
+      return startRegisterFlow({ phone, pushName });
     }
 
     return startFlow({ phone, pushName });
@@ -374,6 +505,18 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
     return startQueryFlow({ phone });
   }
 
+  if (hasRegisterIntent(text)) {
+    const phone = data.phone || phoneFromJid(canonicalJid);
+    if (!phone) {
+      return {
+        state: buildState('ask_phone', { pushName, intent: 'register' }),
+        replies: ['Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+      };
+    }
+
+    return startRegisterFlow({ phone, pushName });
+  }
+
   if (state.step === 'ask_phone') {
     if (!looksLikePhone(text)) {
       return {
@@ -386,7 +529,32 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
       return startQueryFlow({ phone: onlyDigits(text) });
     }
 
+    if (data.intent === 'register') {
+      return startRegisterFlow({ phone: onlyDigits(text), pushName: data.pushName || pushName });
+    }
+
     return startFlow({ phone: onlyDigits(text), pushName: data.pushName || pushName });
+  }
+
+  if (state.step === 'ask_register_name') {
+    const nombre = String(text || '').trim();
+    if (nombre.length < 5 || !nombre.includes(' ')) {
+      return { state, replies: ['Pasame nombre y apellido, por favor.'] };
+    }
+
+    return {
+      state: buildState('ask_register_email', { ...data, nombre }),
+      replies: ['Genial. Ahora pasame tu email. Si ya existe en la base, lo usamos para asociar/actualizar tu telefono.']
+    };
+  }
+
+  if (state.step === 'ask_register_email') {
+    const email = parseEmail(text);
+    if (!email) {
+      return { state, replies: ['Ese email no parece valido. Mandame uno tipo nombre@email.com.'] };
+    }
+
+    return finishRegisterFlow({ ...data, email });
   }
 
   if (state.step === 'ask_cancha') {

@@ -338,13 +338,11 @@ async function startQueryFlow({ phone }) {
 
     const cliente = identity.cliente || {};
     const consultas = [
-      consultarTurnos({ telefono: phone, futuros: 1, limite: 5 }),
-      consultarTurnos({ telefono: phone, futuros: 0, limite: 20 })
+      consultarTurnos({ telefono: phone, futuros: 0, limite: 100 })
     ];
 
     if (cliente.email) {
-      consultas.push(consultarTurnos({ email: cliente.email, futuros: 1, limite: 5 }));
-      consultas.push(consultarTurnos({ email: cliente.email, futuros: 0, limite: 20 }));
+      consultas.push(consultarTurnos({ email: cliente.email, futuros: 0, limite: 100 }));
     }
 
     const resultados = await Promise.allSettled(consultas);
@@ -369,17 +367,10 @@ async function startQueryFlow({ phone }) {
         turnosUnicos.set(String(key), turno);
       }
     }
-    const now = new Date();
-    const currentDateTime = `${toIsoDate(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const dateTimeOf = (turno) => `${turno.fecha || ''}T${turno.hora_inicio || '00:00'}`;
-    const todosLosTurnos = [...turnosUnicos.values()];
-    const proximos = todosLosTurnos
-      .filter((turno) => dateTimeOf(turno) >= currentDateTime)
-      .sort((a, b) => dateTimeOf(a).localeCompare(dateTimeOf(b)));
-    const anteriores = todosLosTurnos
-      .filter((turno) => dateTimeOf(turno) < currentDateTime)
-      .sort((a, b) => dateTimeOf(b).localeCompare(dateTimeOf(a)));
-    const turnos = [...proximos, ...anteriores].slice(0, 5);
+    const turnos = [...turnosUnicos.values()]
+      .sort((a, b) => dateTimeOf(b).localeCompare(dateTimeOf(a)))
+      .slice(0, 5);
 
     if (!turnos.length) {
       return {
@@ -392,19 +383,12 @@ async function startQueryFlow({ phone }) {
       };
     }
 
-    const proximosSeleccionados = turnos.filter((turno) => dateTimeOf(turno) >= currentDateTime);
-    const anterioresSeleccionados = turnos.filter((turno) => dateTimeOf(turno) < currentDateTime);
-    const secciones = [
-      proximosSeleccionados.length ? `Proximas:\n${formatTurnos(proximosSeleccionados)}` : '',
-      anterioresSeleccionados.length ? `Anteriores:\n${formatTurnos(anterioresSeleccionados)}` : ''
-    ].filter(Boolean);
-
     return {
       state: null,
       replies: [
         [
           cliente.nombre ? `${cliente.nombre}, estas son tus ultimas reservas:` : 'Estas son tus ultimas reservas:',
-          ...secciones
+          formatTurnos(turnos)
         ].join('\n')
       ]
     };

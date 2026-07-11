@@ -502,11 +502,28 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
       return startRegisterFlow({
         phone,
         pushName,
-        intro: 'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.'
+        intro: [
+          `Bienvenido${pushName ? `, ${pushName}` : ''}.`,
+          'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.'
+        ].join('\n')
       });
     }
 
-    return { state: null, replies: [] };
+    const cliente = identity.cliente || {};
+    const nombre = cliente.nombre || pushName || '';
+    return {
+      state: null,
+      replies: [
+        [
+          `Bienvenido${nombre ? `, ${nombre}` : ''}. ¿En que puedo ayudarte?`,
+          '',
+          'Escribi una de estas opciones:',
+          '- "reservar" para hacer una reserva',
+          '- "mis reservas" para consultar tus turnos',
+          '- "registrarme" para comprobar tus datos'
+        ].join('\n')
+      ]
+    };
   }
 
   const data = state.data || {};

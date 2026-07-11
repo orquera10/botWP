@@ -563,7 +563,8 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
         phone,
         pushName,
         intro: [
-          `Bienvenido${pushName ? `, ${pushName}` : ''}.`,
+          pushName ? `¡Hola, ${pushName}! Bienvenido a La Tóxica FC.` : '¡Bienvenido a La Tóxica FC!',
+          'Tu cancha de fútbol te espera.',
           'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.'
         ].join('\n')
       });
@@ -575,7 +576,8 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
       state: null,
       replies: [
         [
-          `Bienvenido${nombre ? `, ${nombre}` : ''}. ¿En que puedo ayudarte?`,
+          nombre ? `¡Hola, ${nombre}! Bienvenido a La Tóxica FC.` : '¡Bienvenido a La Tóxica FC!',
+          'Tu cancha de fútbol te espera. ¿En que puedo ayudarte?',
           '',
           'Escribi una de estas opciones:',
           '- "reservar" para hacer una reserva',

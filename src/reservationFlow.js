@@ -175,16 +175,29 @@ function formatTurnos(turnos) {
   return turnos
     .map((turno, index) => {
       const estado = turno.estado ? ` - ${turno.estado}` : '';
-      const senia = Number(turno.senia || 0);
-      const pago = senia > 0 ? ` - senia $${senia}` : '';
+      const senia = Number(turno.senia ?? turno.sena ?? 0);
+      const totalRaw = turno.total ?? turno.precio_total ?? turno.importe_total;
+      const total = totalRaw !== undefined && totalRaw !== null && totalRaw !== ''
+        ? Number(totalRaw)
+        : null;
+      const saldoRaw = turno.saldo ?? turno.saldo_pendiente;
+      const saldo = saldoRaw !== undefined && saldoRaw !== null && saldoRaw !== ''
+        ? Number(saldoRaw)
+        : Number.isFinite(total) ? Math.max(0, total - senia) : null;
+      const formatMoney = (value) => `$${Number(value).toLocaleString('es-AR')}`;
+      const importes = [
+        Number.isFinite(senia) ? `Seña: ${formatMoney(senia)}` : '',
+        Number.isFinite(saldo) ? `Saldo: ${formatMoney(saldo)}` : '',
+        Number.isFinite(total) ? `Total: ${formatMoney(total)}` : ''
+      ].filter(Boolean).join(' - ');
+
       return [
-        `${index + 1}. ${turno.cancha}`,
-        `${turno.fecha_label || turno.fecha}`,
-        `${turno.hora_inicio} a ${turno.hora_fin}${estado}${pago}`,
-        `Ticket: ${turno.ticket_id}`
-      ].join(' - ');
+        `${index + 1}. ${turno.cancha}${estado}`,
+        `${turno.fecha_label || turno.fecha} - ${turno.hora_inicio} a ${turno.hora_fin}`,
+        importes
+      ].filter(Boolean).join('\n');
     })
-    .join('\n');
+    .join('\n\n');
 }
 
 function buildState(step, data = {}) {

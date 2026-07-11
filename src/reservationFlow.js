@@ -452,30 +452,32 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
   }
 
   if (!state) {
-    if (!hasReservationIntent(text) && !hasQueryIntent(text) && !hasRegisterIntent(text)) return { state: null, replies: [] };
+    const reservationIntent = hasReservationIntent(text);
+    const queryIntent = hasQueryIntent(text);
+    const registerIntent = hasRegisterIntent(text);
 
     const phone = phoneFromJid(canonicalJid);
     if (!phone) {
       return {
         state: buildState('ask_phone', {
           pushName,
-          intent: hasQueryIntent(text) ? 'query' : hasRegisterIntent(text) ? 'register' : 'reservation'
+          intent: queryIntent ? 'query' : registerIntent || !reservationIntent ? 'register' : 'reservation'
         }),
         replies: [
-          hasQueryIntent(text)
+          queryIntent
             ? 'Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
-            : hasRegisterIntent(text)
+            : registerIntent || !reservationIntent
               ? 'Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
             : 'Para empezar la reserva necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
         ]
       };
     }
 
-    if (hasQueryIntent(text)) {
+    if (queryIntent) {
       return startQueryFlow({ phone });
     }
 
-    if (hasRegisterIntent(text)) {
+    if (registerIntent) {
       const identity = await identifyClient(phone);
       if (identity.found) {
         const cliente = identity.cliente || {};
@@ -488,7 +490,23 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
       return startRegisterFlow({ phone, pushName });
     }
 
-    return startFlow({ phone, pushName });
+    if (reservationIntent) {
+      return startFlow({ phone, pushName });
+    }
+
+    // Aunque sea un saludo u otro mensaje general, comprobamos si el remitente
+    // necesita registrarse. Los clientes ya registrados no reciben una respuesta
+    // automática hasta que expresen una intención de reserva o consulta.
+    const identity = await identifyClient(phone);
+    if (!identity.found) {
+      return startRegisterFlow({
+        phone,
+        pushName,
+        intro: 'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.'
+      });
+    }
+
+    return { state: null, replies: [] };
   }
 
   const data = state.data || {};

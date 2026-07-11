@@ -177,13 +177,18 @@ function formatTurnos(turnos) {
       const estado = turno.estado ? ` - ${turno.estado}` : '';
       const senia = Number(turno.senia ?? turno.sena ?? 0);
       const totalRaw = turno.total ?? turno.precio_total ?? turno.importe_total;
-      const total = totalRaw !== undefined && totalRaw !== null && totalRaw !== ''
+      let total = totalRaw !== undefined && totalRaw !== null && totalRaw !== ''
         ? Number(totalRaw)
         : null;
       const saldoRaw = turno.saldo ?? turno.saldo_pendiente;
       const saldo = saldoRaw !== undefined && saldoRaw !== null && saldoRaw !== ''
         ? Number(saldoRaw)
         : Number.isFinite(total) ? Math.max(0, total - senia) : null;
+
+      if (!Number.isFinite(total) && Number.isFinite(senia) && Number.isFinite(saldo)) {
+        total = senia + saldo;
+      }
+
       const formatMoney = (value) => `$${Number(value).toLocaleString('es-AR')}`;
       const importes = [
         Number.isFinite(senia) ? `Seña: ${formatMoney(senia)}` : '',

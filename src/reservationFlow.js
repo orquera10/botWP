@@ -367,7 +367,10 @@ async function startQueryFlow({ phone }) {
         turnosUnicos.set(String(key), turno);
       }
     }
-    const dateTimeOf = (turno) => `${turno.fecha || ''}T${turno.hora_inicio || '00:00'}`;
+    const dateTimeOf = (turno) => {
+      const fecha = parseDate(turno.fecha) || String(turno.fecha || '');
+      return `${fecha}T${turno.hora_inicio || '00:00'}`;
+    };
     const turnos = [...turnosUnicos.values()]
       .sort((a, b) => dateTimeOf(b).localeCompare(dateTimeOf(a)))
       .slice(0, 5);

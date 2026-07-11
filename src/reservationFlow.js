@@ -338,11 +338,11 @@ async function startQueryFlow({ phone }) {
 
     const cliente = identity.cliente || {};
     const consultas = [
-      consultarTurnos({ telefono: phone, futuros: 0, limite: 100 })
+      consultarTurnos({ telefono: phone, futuros: 1, limite: 5 })
     ];
 
     if (cliente.email) {
-      consultas.push(consultarTurnos({ email: cliente.email, futuros: 0, limite: 100 }));
+      consultas.push(consultarTurnos({ email: cliente.email, futuros: 1, limite: 5 }));
     }
 
     const resultados = await Promise.allSettled(consultas);
@@ -367,29 +367,32 @@ async function startQueryFlow({ phone }) {
         turnosUnicos.set(String(key), turno);
       }
     }
-    const turnos = [...turnosUnicos.values()];
+    const turnos = [...turnosUnicos.values()]
+      .sort((a, b) => {
+        const fechaA = `${a.fecha || ''}T${a.hora_inicio || '00:00'}`;
+        const fechaB = `${b.fecha || ''}T${b.hora_inicio || '00:00'}`;
+        return fechaA.localeCompare(fechaB);
+      })
+      .slice(0, 5);
 
     if (!turnos.length) {
       return {
         state: null,
         replies: [
           cliente.nombre
-            ? `${cliente.nombre}, no encontre reservas asociadas a tu telefono o email.`
-            : 'No encontre reservas asociadas a tu telefono o email.'
+            ? `${cliente.nombre}, no encontre reservas futuras asociadas a tu telefono o email.`
+            : 'No encontre reservas futuras asociadas a tu telefono o email.'
         ]
       };
-    }
-
-    const grupos = [];
-    for (let index = 0; index < turnos.length; index += 10) {
-      grupos.push(turnos.slice(index, index + 10));
     }
 
     return {
       state: null,
       replies: [
-        `${cliente.nombre ? `${cliente.nombre}, e` : 'E'}ncontre ${turnos.length} reserva(s) asociada(s) a tu telefono o email:`,
-        ...grupos.map((grupo) => formatTurnos(grupo))
+        [
+          cliente.nombre ? `${cliente.nombre}, estas son tus proximas reservas:` : 'Estas son tus proximas reservas:',
+          formatTurnos(turnos)
+        ].join('\n')
       ]
     };
   } catch (error) {

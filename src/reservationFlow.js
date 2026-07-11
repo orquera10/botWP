@@ -173,7 +173,6 @@ function compactTerms(terminos) {
 
 function formatTurnos(turnos) {
   return turnos
-    .slice(0, 5)
     .map((turno, index) => {
       const estado = turno.estado ? ` - ${turno.estado}` : '';
       const senia = Number(turno.senia || 0);
@@ -329,28 +328,68 @@ async function finishRegisterFlow(data) {
 
 async function startQueryFlow({ phone }) {
   try {
-    const result = await consultarTurnos({ telefono: phone, futuros: 1, limite: 5 });
-    const turnos = result.turnos || [];
-    const cliente = result.cliente || {};
+    const identity = await identifyClient(phone);
+    if (!identity.found) {
+      return {
+        state: null,
+        replies: ['No encontre un cliente registrado con ese telefono.']
+      };
+    }
+
+    const cliente = identity.cliente || {};
+    const consultas = [
+      consultarTurnos({ telefono: phone, futuros: 0, limite: 100 })
+    ];
+
+    if (cliente.email) {
+      consultas.push(consultarTurnos({ email: cliente.email, futuros: 0, limite: 100 }));
+    }
+
+    const resultados = await Promise.allSettled(consultas);
+    const exitosos = resultados
+      .filter((resultado) => resultado.status === 'fulfilled' || resultado.reason?.status === 404)
+      .map((resultado) => resultado.status === 'fulfilled' ? resultado.value : { turnos: [] });
+
+    if (!exitosos.length) {
+      const error = resultados.find((resultado) => resultado.status === 'rejected')?.reason;
+      throw error || new Error('No se pudieron consultar las reservas.');
+    }
+
+    const turnosUnicos = new Map();
+    for (const result of exitosos) {
+      for (const turno of result.turnos || []) {
+        const key = turno.ticket_id || [
+          turno.cancha,
+          turno.fecha,
+          turno.hora_inicio,
+          turno.hora_fin
+        ].join('|');
+        turnosUnicos.set(String(key), turno);
+      }
+    }
+    const turnos = [...turnosUnicos.values()];
 
     if (!turnos.length) {
       return {
         state: null,
         replies: [
           cliente.nombre
-            ? `${cliente.nombre}, no encontre reservas futuras para este telefono.`
-            : 'No encontre reservas futuras para este telefono.'
+            ? `${cliente.nombre}, no encontre reservas asociadas a tu telefono o email.`
+            : 'No encontre reservas asociadas a tu telefono o email.'
         ]
       };
+    }
+
+    const grupos = [];
+    for (let index = 0; index < turnos.length; index += 10) {
+      grupos.push(turnos.slice(index, index + 10));
     }
 
     return {
       state: null,
       replies: [
-        [
-          cliente.nombre ? `${cliente.nombre}, estas son tus proximas reservas:` : 'Estas son tus proximas reservas:',
-          formatTurnos(turnos)
-        ].join('\n')
+        `${cliente.nombre ? `${cliente.nombre}, e` : 'E'}ncontre ${turnos.length} reserva(s) asociada(s) a tu telefono o email:`,
+        ...grupos.map((grupo) => formatTurnos(grupo))
       ]
     };
   } catch (error) {

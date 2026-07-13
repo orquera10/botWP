@@ -409,7 +409,14 @@ export async function getBusinessUserRole(businessId, phone) {
     `
       select role
       from business_users
-      where business_id = $1 and phone = $2 and enabled = true
+      where business_id = $1
+        and enabled = true
+        and (
+          phone = $2
+          or (length(phone) = 10 and right($2, 10) = phone)
+          or (length($2) = 10 and right(phone, 10) = $2)
+        )
+      order by (phone = $2) desc, length(phone) desc
       limit 1
     `,
     [businessId, phone]

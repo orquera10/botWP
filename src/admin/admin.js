@@ -5,7 +5,8 @@ const state = {
   serverInfo: null,
   search: '',
   refreshTimer: null,
-  apiKey: ''
+  apiKey: '',
+  realtimeStatus: 'conectando tiempo real'
 };
 
 const els = {
@@ -202,11 +203,19 @@ function renderAll() {
   renderSelectedClient();
 }
 
+function renderSystemStatus() {
+  if (!state.serverInfo) return;
+
+  const dbEnabled = Boolean(state.serverInfo.database?.enabled);
+  const databaseStatus = dbEnabled ? 'PostgreSQL conectado' : 'PostgreSQL sin configurar';
+  els.systemStatus.textContent = `${databaseStatus} · ${state.serverInfo.sessionRoot} · ${state.realtimeStatus}`;
+}
+
 async function loadServerInfo() {
   state.serverInfo = await api('/');
   const dbEnabled = Boolean(state.serverInfo.database?.enabled);
 
-  els.systemStatus.textContent = `${dbEnabled ? 'PostgreSQL conectado' : 'PostgreSQL sin configurar'} · ${state.serverInfo.sessionRoot}`;
+  renderSystemStatus();
   els.dbBadge.textContent = dbEnabled ? 'DB conectada' : 'DB off';
   els.dbBadge.className = `badge ${dbEnabled ? 'badge-ok' : 'badge-off'}`;
 }
@@ -243,6 +252,8 @@ function connectRealtimeEvents() {
   const source = new EventSource('/admin/events');
 
   source.addEventListener('ready', () => {
+    state.realtimeStatus = 'tiempo real activo';
+    renderSystemStatus();
     showToast('Panel en tiempo real conectado.');
   });
 
@@ -271,7 +282,8 @@ function connectRealtimeEvents() {
   });
 
   source.onerror = () => {
-    els.systemStatus.textContent = `${els.systemStatus.textContent.replace(' · tiempo real activo', '')} · reconectando tiempo real`;
+    state.realtimeStatus = 'reconectando tiempo real';
+    renderSystemStatus();
   };
 }
 

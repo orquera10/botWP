@@ -20,6 +20,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -89,6 +95,19 @@ p {
   padding: 18px 24px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+}
+
+.topbar > div:first-child,
+.panel-title > div,
+.client-heading > div {
+  min-width: 0;
+}
+
+#system-status,
+#selected-client-meta,
+#conversation-context,
+#messages-context {
+  overflow-wrap: anywhere;
 }
 
 .topbar h1 {
@@ -163,9 +182,10 @@ p {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   gap: 18px;
   padding: 18px;
+  min-width: 0;
 }
 
 .panel {
@@ -191,6 +211,7 @@ p {
 .client-detail {
   display: grid;
   gap: 18px;
+  min-width: 0;
 }
 
 .panel-title,
@@ -261,8 +282,9 @@ p {
   gap: 8px;
   margin-top: 12px;
   max-height: 420px;
-  overflow-y: auto;
+  overflow: auto;
   padding-right: 4px;
+  min-width: 0;
 }
 
 .client-item,
@@ -274,6 +296,19 @@ p {
   border-radius: 6px;
   padding: 10px;
   max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-item > *,
+.conversation-item > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message-body {
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -405,8 +440,20 @@ p {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+  min-width: 0;
+}
+
+.content-grid > *,
+.content-grid > :only-child,
+.panel,
+.messages-panel {
+  min-width: 0;
+}
+
+.content-grid > :only-child {
+  grid-column: 1 / -1;
 }
 
 .empty-state {
@@ -477,5 +524,51 @@ p {
   .clients-panel {
     position: static;
     max-height: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar,
+  .summary-grid,
+  .layout {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+  }
+
+  .topbar-actions button {
+    flex: 1;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .panel-title,
+  .client-heading {
+    flex-wrap: wrap;
+  }
+
+  .panel-title button {
+    width: 100%;
+  }
+
+  .inline-row,
+  .lid-question-form {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-panel,
+  .messages-panel,
+  .content-grid > .panel {
+    padding: 14px;
+  }
+
+  .qr-box {
+    height: 380px;
   }
 }

@@ -508,7 +508,7 @@ async function loadMessages() {
     item.innerHTML = `
       <div class="message-title">${escapeHtml(message.direction || 'message')} · ${escapeHtml(message.from || message.to || '')}</div>
       <div class="message-meta">${escapeHtml(formatDate(message.createdAt || message.messageTimestamp))}${escapeHtml(status)}</div>
-      <div>${escapeHtml(message.text || '')}</div>
+      <div class="message-body">${escapeHtml(message.text || '')}</div>
     `;
     els.messagesList.appendChild(item);
   }

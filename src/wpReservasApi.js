@@ -25,9 +25,9 @@ function buildUrl(baseUrl, action, params = {}) {
 }
 
 async function request(config, action, { method = 'GET', params = {}, body = null } = {}) {
-  const { baseUrl, apiKey } = config;
-  if (!apiKey) {
-    throw new Error('Falta configurar API_KEY o WP_RESERVAS_API_KEY.');
+  const { baseUrl, apiKey, authHeader = 'X-API-Key' } = config;
+  if (!baseUrl || !apiKey) {
+    throw new Error('Falta configurar la URL o la API key.');
   }
 
   const url = buildUrl(baseUrl, action, params);
@@ -39,7 +39,7 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
         method,
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey
+          [authHeader]: apiKey
         },
         body: body ? JSON.stringify(body) : null
       });
@@ -73,7 +73,8 @@ export function createReservasApi(config = {}) {
   const resolvedConfig = {
     baseUrl: config.baseUrl || '',
     apiKey: config.apiKey || '',
-    adminAgendaAction: config.adminAgendaAction || 'agenda'
+    authHeader: config.authHeader || 'X-API-Key',
+    adminAgendaAction: config.adminAgendaAction || 'turnos'
   };
 
   return {
@@ -102,6 +103,12 @@ export function createReservasApi(config = {}) {
         params: { fecha }
       });
       return data.turnos || data.reservas || [];
+    },
+    consultarInformeDiario({ fecha }) {
+      return request(resolvedConfig, 'informe_diario', { params: { fecha } });
+    },
+    consultarInformeMensual({ mes }) {
+      return request(resolvedConfig, 'informe_mensual', { params: { mes } });
     },
     consultarCliente({ telefono, email }) {
       return request(resolvedConfig, 'cliente', { params: { telefono, email } });

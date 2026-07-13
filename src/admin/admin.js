@@ -26,6 +26,8 @@ const els = {
   businessAdminAgendaInput: document.querySelector('#business-admin-agenda-input'),
   businessApiUrlInput: document.querySelector('#business-api-url-input'),
   businessApiKeyInput: document.querySelector('#business-api-key-input'),
+  businessAdminApiUrlInput: document.querySelector('#business-admin-api-url-input'),
+  businessAdminApiKeyInput: document.querySelector('#business-admin-api-key-input'),
   businessWelcomeInput: document.querySelector('#business-welcome-input'),
   businessUnregisteredInput: document.querySelector('#business-unregistered-input'),
   businessAdminPhonesInput: document.querySelector('#business-admin-phones-input'),
@@ -364,10 +366,12 @@ async function createBusiness(event) {
     ].filter(Boolean),
     apiUrl: els.businessApiUrlInput.value.trim(),
     apiKey: els.businessApiKeyInput.value.trim(),
+    adminApiUrl: els.businessAdminApiUrlInput.value.trim(),
+    adminApiKey: els.businessAdminApiKeyInput.value.trim(),
     settings: {
       welcomeMessage: els.businessWelcomeInput.value.trim(),
       unregisteredMessage: els.businessUnregisteredInput.value.trim(),
-      adminAgendaAction: 'agenda'
+      adminAgendaAction: 'turnos'
     },
     adminPhones: els.businessAdminPhonesInput.value
       .split(/[\n,;]+/)

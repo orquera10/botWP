@@ -32,18 +32,32 @@ Content-Type: application/json
   "flows": ["reservas", "registro", "admin_agenda"],
   "apiUrl": "https://ejemplo.com/api.php",
   "apiKey": "clave-del-negocio",
+  "adminApiUrl": "https://ejemplo.com/admin_api.php",
+  "adminApiKey": "clave-administrativa-del-negocio",
   "settings": {
     "welcomeMessage": "¡Hola, {name}! Bienvenido a {businessName}.",
     "unregisteredMessage": "Para continuar necesito comprobar tus datos.",
-    "adminAgendaAction": "agenda"
+    "adminAgendaAction": "turnos"
   },
   "adminPhones": ["5491112345678"]
 }
 ```
 
-La API key queda en el servidor y no se devuelve al navegador al listar clientes o negocios.
+Las API keys quedan en el servidor y no se devuelven al navegador al listar clientes o negocios.
 
-Los modulos se habilitan por negocio. `reservas` consulta y crea reservas; si el telefono no existe, deriva automaticamente al modulo `registro`, que solicita nombre y email en un estado independiente. El endpoint `crear_cliente` puede asociar el telefono remitente a un usuario encontrado por email y, al terminar, el bot vuelve a la seleccion de cancha. `admin_agenda` solo responde a telefonos incluidos en `adminPhones`; la API del negocio debe implementar la accion configurada en `adminAgendaAction` y aceptar una fecha para devolver todos los turnos de ese dia.
+Los modulos se habilitan por negocio. `reservas` consulta y crea reservas; si el telefono no existe, deriva automaticamente al modulo `registro`, que solicita nombre y email en un estado independiente. El endpoint `crear_cliente` puede asociar el telefono remitente a un usuario encontrado por email y, al terminar, el bot vuelve a la seleccion de cancha. `admin_agenda` solo responde a telefonos incluidos en `adminPhones`. Usa credenciales separadas (`adminApiUrl` y `adminApiKey`) y el encabezado `X-Admin-API-Key`.
+
+El flujo administrativo muestra un menu exclusivo cuando un administrador escribe `hola` o `menu`; permite responder `1`, `2` o `3`. Tambien reconoce consultas como `agenda de hoy`, `informe diario de ayer` e `informe mensual julio 2026`. Consume `turnos`, `informe_diario` e `informe_mensual` y muestra por WhatsApp los turnos o el resumen financiero correspondiente.
+
+Para La Toxica tambien se puede configurar directamente en `.env`:
+
+```env
+ADMIN_API_URL=https://mediumslateblue-pony-524766.hostingersite.com/admin_api.php
+ADMIN_API_KEY=tu-clave-administrativa
+ADMIN_PHONES=5491112345678,5491198765432
+```
+
+Los telefonos se escriben con codigo de pais, sin `+`, espacios ni guiones. Al iniciar, se guardan como administradores de `la-toxica` y, cuando la URL y la clave estan configuradas, se habilita la agenda administrativa. Tambien podes administrarlo desde el panel marcando **Agenda para administradores** al guardar el negocio La Toxica.
 
 En Postman:
 

@@ -53,6 +53,11 @@ const MESSAGE_SEND_DELAY_MS = Number(process.env.MESSAGE_SEND_DELAY_MS || 2000);
 const API_KEY = process.env.API_KEY || '';
 const DEFAULT_BUSINESS_ID = 'la-toxica';
 
+function normalizeAdminAgendaAction(value) {
+  const action = String(value || '').trim();
+  return !action || action === 'agenda' ? 'turnos' : action;
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -190,6 +195,8 @@ function defaultBusinessProfile() {
     flows: ['registro', 'reservas'],
     apiUrl: process.env.WP_RESERVAS_API_URL || '',
     apiKey: process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || '',
+    adminApiUrl: process.env.ADMIN_API_URL || '',
+    adminApiKey: process.env.ADMIN_API_KEY || '',
     settings: {}
   };
 }
@@ -203,6 +210,8 @@ function applyBusinessProfile(session, business = defaultBusinessProfile()) {
     : session.flowType === 'reservas' ? ['registro', 'reservas'] : [];
   session.businessApiUrl = business.apiUrl || '';
   session.businessApiKey = business.apiKey || '';
+  session.businessAdminApiUrl = business.adminApiUrl || '';
+  session.businessAdminApiKey = business.adminApiKey || '';
   session.businessSettings = business.settings || {};
   return session;
 }
@@ -451,7 +460,13 @@ async function connectSession(clientName) {
           const reservasApi = createReservasApi({
             baseUrl: session.businessApiUrl,
             apiKey: session.businessApiKey,
-            adminAgendaAction: session.businessSettings.adminAgendaAction || 'agenda'
+            adminAgendaAction: normalizeAdminAgendaAction(session.businessSettings.adminAgendaAction)
+          });
+          const adminApi = createReservasApi({
+            baseUrl: session.businessAdminApiUrl,
+            apiKey: session.businessAdminApiKey,
+            authHeader: 'X-Admin-API-Key',
+            adminAgendaAction: normalizeAdminAgendaAction(session.businessSettings.adminAgendaAction)
           });
           let handledByAdminFlow = false;
 
@@ -465,7 +480,7 @@ async function connectSession(clientName) {
               const adminResult = await handleAdminScheduleFlow({
                 state: adminState,
                 text: payload.text,
-                reservasApi,
+                reservasApi: adminApi,
                 businessName: session.businessName
               });
               handledByAdminFlow = adminResult.handled;
@@ -481,7 +496,7 @@ async function connectSession(clientName) {
               if (adminResult.error) {
                 logger.warn(
                   { clientId: session.id, businessId: session.businessId, error: adminResult.error },
-                  'La API del negocio no pudo consultar la agenda administrativa'
+                  'La API del negocio no pudo completar la consulta administrativa'
                 );
               }
             }
@@ -774,6 +789,8 @@ async function ensureSessionForRequest(req, res, next) {
         flows: client.flows,
         apiUrl: client.apiUrl,
         apiKey: client.apiKey,
+        adminApiUrl: client.adminApiUrl,
+        adminApiKey: client.adminApiKey,
         settings: client.settings
       };
     }
@@ -1113,7 +1130,7 @@ app.get('/', (_req, res) => {
 app.get('/clients', async (_req, res) => {
   if (isDatabaseEnabled()) {
     const clients = await listDbClients();
-    return res.json(clients.map(({ apiKey, apiUrl, settings, ...client }) => client));
+    return res.json(clients.map(({ apiKey, apiUrl, adminApiKey, adminApiUrl, settings, ...client }) => client));
   }
 
   return res.json([...sessions.values()].map(sessionSummary));
@@ -1142,13 +1159,15 @@ app.post('/businesses', adminAuth, async (req, res) => {
   const flowType = flows.includes('reservas') ? 'reservas' : 'none';
   const apiUrl = String(req.body.apiUrl || '').trim();
   const apiKey = String(req.body.apiKey || '').trim();
+  const adminApiUrl = String(req.body.adminApiUrl || '').trim();
+  const adminApiKey = String(req.body.adminApiKey || '').trim();
   const adminPhones = [...new Set((Array.isArray(req.body.adminPhones) ? req.body.adminPhones : [])
     .map((phone) => String(phone).replace(/\D/g, ''))
     .filter((phone) => phone.length >= 10 && phone.length <= 15))];
   const settings = {
     welcomeMessage: String(req.body.settings?.welcomeMessage || '').trim(),
     unregisteredMessage: String(req.body.settings?.unregisteredMessage || '').trim(),
-    adminAgendaAction: String(req.body.settings?.adminAgendaAction || 'agenda').trim()
+    adminAgendaAction: normalizeAdminAgendaAction(req.body.settings?.adminAgendaAction)
   };
 
   if (!id || !name) {
@@ -1158,8 +1177,13 @@ app.post('/businesses', adminAuth, async (req, res) => {
     return res.status(400).json({ error: 'Uno de los modulos seleccionados no es valido.' });
   }
   const existingBusiness = await getBusinessProfile(id);
-  if (flows.length && (!(apiUrl || existingBusiness?.apiUrl) || (!apiKey && !existingBusiness?.apiKey))) {
-    return res.status(400).json({ error: 'Los modulos automaticos necesitan URL y API key.' });
+  if (flows.some((flow) => ['reservas', 'registro'].includes(flow))
+    && (!(apiUrl || existingBusiness?.apiUrl) || (!apiKey && !existingBusiness?.apiKey))) {
+    return res.status(400).json({ error: 'Reservas y registro necesitan su URL y API key.' });
+  }
+  if (flows.includes('admin_agenda')
+    && (!(adminApiUrl || existingBusiness?.adminApiUrl) || (!adminApiKey && !existingBusiness?.adminApiKey))) {
+    return res.status(400).json({ error: 'La agenda administrativa necesita su URL y API key.' });
   }
 
   const business = await saveBusinessProfile({
@@ -1169,6 +1193,8 @@ app.post('/businesses', adminAuth, async (req, res) => {
     flows,
     apiUrl,
     apiKey,
+    adminApiUrl,
+    adminApiKey,
     settings,
     adminPhones
   });
@@ -1401,6 +1427,8 @@ async function autoStartClients() {
         flows: client.flows,
         apiUrl: client.apiUrl,
         apiKey: client.apiKey,
+        adminApiUrl: client.adminApiUrl,
+        adminApiKey: client.adminApiKey,
         settings: client.settings
       });
       connectSession(clientName).catch((error) => {

@@ -26,11 +26,16 @@ export async function initDatabase() {
       flow_type text not null default 'none',
       api_url text,
       api_key text,
+      admin_api_url text,
+      admin_api_key text,
       settings jsonb not null default '{}'::jsonb,
       enabled boolean not null default true,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+
+    alter table business_profiles add column if not exists admin_api_url text;
+    alter table business_profiles add column if not exists admin_api_key text;
 
     create table if not exists app_migrations (
       key text primary key,
@@ -145,17 +150,46 @@ export async function initDatabase() {
 
   await pool.query(
     `
-      insert into business_profiles (id, name, flow_type, api_url, api_key)
-      values ('la-toxica', 'La Toxica', 'reservas', $1, $2)
+      insert into business_profiles (id, name, flow_type, api_url, api_key, admin_api_url, admin_api_key)
+      values ('la-toxica', 'La Toxica', 'reservas', $1, $2, $3, $4)
       on conflict (id) do update set
         name = excluded.name,
         flow_type = excluded.flow_type,
         api_url = coalesce(excluded.api_url, business_profiles.api_url),
         api_key = coalesce(excluded.api_key, business_profiles.api_key),
+        admin_api_url = coalesce(excluded.admin_api_url, business_profiles.admin_api_url),
+        admin_api_key = coalesce(excluded.admin_api_key, business_profiles.admin_api_key),
         updated_at = now()
     `,
-    [process.env.WP_RESERVAS_API_URL || null, process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || null]
+    [
+      process.env.WP_RESERVAS_API_URL || null,
+      process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || null,
+      process.env.ADMIN_API_URL || null,
+      process.env.ADMIN_API_KEY || null
+    ]
   );
+
+  const defaultAdminPhones = String(process.env.ADMIN_PHONES || '')
+    .split(/[;,\s]+/)
+    .map((phone) => phone.replace(/\D/g, ''))
+    .filter((phone) => phone.length >= 10 && phone.length <= 15);
+
+  for (const phone of new Set(defaultAdminPhones)) {
+    await pool.query(
+      `insert into business_users (business_id, phone, role)
+       values ('la-toxica', $1, 'admin')
+       on conflict (business_id, phone) do update set role = 'admin', enabled = true, updated_at = now()`,
+      [phone]
+    );
+  }
+
+  if (process.env.ADMIN_API_URL && process.env.ADMIN_API_KEY) {
+    await pool.query(
+      `insert into business_flows (business_id, flow_name)
+       values ('la-toxica', 'admin_agenda')
+       on conflict (business_id, flow_name) do update set enabled = true, updated_at = now()`
+    );
+  }
 
   await pool.query(`
     insert into business_profiles (id, name, flow_type)
@@ -231,6 +265,7 @@ export async function listDbClients() {
   const result = await pool.query(`
     select c.id, c.client_name as "clientName", c.business_id as "businessId",
       b.name as "businessName", b.flow_type as "flowType", b.api_url as "apiUrl", b.api_key as "apiKey",
+      b.admin_api_url as "adminApiUrl", b.admin_api_key as "adminApiKey",
       b.settings,
       coalesce((
         select json_agg(bf.flow_name order by bf.flow_name)
@@ -251,8 +286,9 @@ export async function listBusinessProfiles() {
   if (!pool) return [];
 
   const result = await pool.query(`
-    select id, name, flow_type as "flowType", api_url as "apiUrl",
+    select id, name, flow_type as "flowType", api_url as "apiUrl", admin_api_url as "adminApiUrl",
       (api_key is not null and api_key <> '') as "hasApiKey", settings, enabled,
+      (admin_api_key is not null and admin_api_key <> '') as "hasAdminApiKey",
       coalesce((
         select json_agg(bf.flow_name order by bf.flow_name)
         from business_flows bf
@@ -278,6 +314,7 @@ export async function getBusinessProfile(businessId) {
   const result = await pool.query(
     `
       select id, name, flow_type as "flowType", api_url as "apiUrl", api_key as "apiKey",
+        admin_api_url as "adminApiUrl", admin_api_key as "adminApiKey",
         settings, enabled,
         coalesce((
           select json_agg(bf.flow_name order by bf.flow_name)
@@ -299,8 +336,10 @@ export async function saveBusinessProfile(profile) {
 
   const result = await pool.query(
     `
-      insert into business_profiles (id, name, flow_type, api_url, api_key, settings, updated_at)
-      values ($1, $2, $3, $4, $5, $6, now())
+      insert into business_profiles (
+        id, name, flow_type, api_url, api_key, admin_api_url, admin_api_key, settings, updated_at
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8, now())
       on conflict (id) do update set
         name = excluded.name,
         flow_type = excluded.flow_type,
@@ -312,11 +351,21 @@ export async function saveBusinessProfile(profile) {
           when excluded.api_key is null or excluded.api_key = '' then business_profiles.api_key
           else excluded.api_key
         end,
+        admin_api_url = case
+          when excluded.admin_api_url is null or excluded.admin_api_url = '' then business_profiles.admin_api_url
+          else excluded.admin_api_url
+        end,
+        admin_api_key = case
+          when excluded.admin_api_key is null or excluded.admin_api_key = '' then business_profiles.admin_api_key
+          else excluded.admin_api_key
+        end,
         settings = excluded.settings,
         enabled = true,
         updated_at = now()
       returning id, name, flow_type as "flowType", api_url as "apiUrl",
-        (api_key is not null and api_key <> '') as "hasApiKey", settings, enabled
+        admin_api_url as "adminApiUrl",
+        (api_key is not null and api_key <> '') as "hasApiKey",
+        (admin_api_key is not null and admin_api_key <> '') as "hasAdminApiKey", settings, enabled
     `,
     [
       profile.id,
@@ -324,6 +373,8 @@ export async function saveBusinessProfile(profile) {
       profile.flowType,
       profile.apiUrl || null,
       profile.apiKey || null,
+      profile.adminApiUrl || null,
+      profile.adminApiKey || null,
       JSON.stringify(profile.settings || {})
     ]
   );

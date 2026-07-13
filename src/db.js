@@ -20,9 +20,22 @@ export async function initDatabase() {
   if (!pool) return;
 
   await pool.query(`
+    create table if not exists business_profiles (
+      id text primary key,
+      name text not null,
+      flow_type text not null default 'none',
+      api_url text,
+      api_key text,
+      settings jsonb not null default '{}'::jsonb,
+      enabled boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
     create table if not exists clients (
       id text primary key,
       client_name text not null,
+      business_id text not null default 'la-toxica',
       session_dir text not null,
       status text not null default 'idle',
       user_jid text,
@@ -31,6 +44,8 @@ export async function initDatabase() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+
+    alter table clients add column if not exists business_id text;
 
     create table if not exists conversations (
       id bigserial primary key,
@@ -101,6 +116,39 @@ export async function initDatabase() {
       primary key (client_id, jid, flow_name)
     );
   `);
+
+  await pool.query(
+    `
+      insert into business_profiles (id, name, flow_type, api_url, api_key)
+      values ('la-toxica', 'La Toxica', 'reservas', $1, $2)
+      on conflict (id) do update set
+        name = excluded.name,
+        flow_type = excluded.flow_type,
+        api_url = coalesce(excluded.api_url, business_profiles.api_url),
+        api_key = coalesce(excluded.api_key, business_profiles.api_key),
+        updated_at = now()
+    `,
+    [process.env.WP_RESERVAS_API_URL || null, process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || null]
+  );
+
+  await pool.query(`
+    insert into business_profiles (id, name, flow_type)
+    values ('sin-automatizacion', 'Sin automatizacion', 'none')
+    on conflict (id) do nothing;
+
+    update clients set business_id = 'la-toxica' where business_id is null;
+    alter table clients alter column business_id set default 'la-toxica';
+    alter table clients alter column business_id set not null;
+
+    do $$
+    begin
+      if not exists (select 1 from pg_constraint where conname = 'clients_business_id_fkey') then
+        alter table clients
+          add constraint clients_business_id_fkey
+          foreign key (business_id) references business_profiles(id) on delete restrict;
+      end if;
+    end $$;
+  `);
 }
 
 export async function upsertClient(session) {
@@ -108,10 +156,11 @@ export async function upsertClient(session) {
 
   await pool.query(
     `
-      insert into clients (id, client_name, session_dir, status, user_jid, user_name, last_error, updated_at)
-      values ($1, $2, $3, $4, $5, $6, $7, now())
+      insert into clients (id, client_name, business_id, session_dir, status, user_jid, user_name, last_error, updated_at)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, now())
       on conflict (id) do update set
         client_name = excluded.client_name,
+        business_id = excluded.business_id,
         session_dir = excluded.session_dir,
         status = excluded.status,
         user_jid = excluded.user_jid,
@@ -122,6 +171,7 @@ export async function upsertClient(session) {
     [
       session.id,
       session.clientName,
+      session.businessId || 'la-toxica',
       session.dir,
       session.status,
       session.sock?.user?.id || null,
@@ -135,13 +185,82 @@ export async function listDbClients() {
   if (!pool) return [];
 
   const result = await pool.query(`
-    select id, client_name as "clientName", session_dir as dir, status, user_jid as "userJid",
-      user_name as "userName", last_error as "lastError", created_at as "createdAt", updated_at as "updatedAt"
-    from clients
-    order by updated_at desc
+    select c.id, c.client_name as "clientName", c.business_id as "businessId",
+      b.name as "businessName", b.flow_type as "flowType", b.api_url as "apiUrl", b.api_key as "apiKey",
+      b.settings, c.session_dir as dir, c.status, c.user_jid as "userJid",
+      c.user_name as "userName", c.last_error as "lastError", c.created_at as "createdAt", c.updated_at as "updatedAt"
+    from clients c
+    join business_profiles b on b.id = c.business_id
+    order by c.updated_at desc
   `);
 
   return result.rows;
+}
+
+export async function listBusinessProfiles() {
+  if (!pool) return [];
+
+  const result = await pool.query(`
+    select id, name, flow_type as "flowType", api_url as "apiUrl",
+      (api_key is not null and api_key <> '') as "hasApiKey", settings, enabled,
+      created_at as "createdAt", updated_at as "updatedAt"
+    from business_profiles
+    where enabled = true
+    order by name
+  `);
+
+  return result.rows;
+}
+
+export async function getBusinessProfile(businessId) {
+  if (!pool || !businessId) return null;
+
+  const result = await pool.query(
+    `
+      select id, name, flow_type as "flowType", api_url as "apiUrl", api_key as "apiKey",
+        settings, enabled
+      from business_profiles
+      where id = $1 and enabled = true
+      limit 1
+    `,
+    [businessId]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function saveBusinessProfile(profile) {
+  if (!pool) return null;
+
+  const result = await pool.query(
+    `
+      insert into business_profiles (id, name, flow_type, api_url, api_key, settings, updated_at)
+      values ($1, $2, $3, $4, $5, $6, now())
+      on conflict (id) do update set
+        name = excluded.name,
+        flow_type = excluded.flow_type,
+        api_url = excluded.api_url,
+        api_key = case
+          when excluded.api_key is null or excluded.api_key = '' then business_profiles.api_key
+          else excluded.api_key
+        end,
+        settings = excluded.settings,
+        enabled = true,
+        updated_at = now()
+      returning id, name, flow_type as "flowType", api_url as "apiUrl",
+        (api_key is not null and api_key <> '') as "hasApiKey", settings, enabled
+    `,
+    [
+      profile.id,
+      profile.name,
+      profile.flowType,
+      profile.apiUrl || null,
+      profile.apiKey || null,
+      JSON.stringify(profile.settings || {})
+    ]
+  );
+
+  return result.rows[0];
 }
 
 export async function deleteDbClient(clientId) {

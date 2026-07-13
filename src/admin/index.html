@@ -46,8 +46,30 @@
           </div>
         </div>
 
+        <details class="business-config">
+          <summary>Agregar negocio o API</summary>
+          <form id="create-business-form" class="message-form">
+            <label for="business-name-input">Nombre del negocio</label>
+            <input id="business-name-input" placeholder="Ej: Padel Norte" required>
+            <label for="business-flow-input">Flujo</label>
+            <select id="business-flow-input">
+              <option value="reservas">Reservas</option>
+              <option value="none">Sin respuestas automaticas</option>
+            </select>
+            <label for="business-api-url-input">URL de la API</label>
+            <input id="business-api-url-input" type="url" placeholder="https://ejemplo.com/api.php">
+            <label for="business-api-key-input">API key</label>
+            <input id="business-api-key-input" type="password" autocomplete="new-password">
+            <button type="submit">Guardar negocio</button>
+          </form>
+        </details>
+
         <form id="create-client-form" class="create-form">
           <label for="client-name-input">Nuevo cliente</label>
+          <label for="client-business-input">Negocio y flujo de respuestas</label>
+          <select id="client-business-input" name="businessId" required>
+            <option value="">Cargando negocios...</option>
+          </select>
           <div class="inline-row">
             <input id="client-name-input" name="clientName" placeholder="Ej: Ventas Norte" autocomplete="off" required>
             <button type="submit">Crear</button>

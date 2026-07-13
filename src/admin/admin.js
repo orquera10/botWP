@@ -1,5 +1,6 @@
 const state = {
   clients: [],
+  businesses: [],
   selectedClientId: null,
   selectedConversationJid: null,
   serverInfo: null,
@@ -18,7 +19,13 @@ const els = {
   errorClients: document.querySelector('#error-clients'),
   refreshButton: document.querySelector('#refresh-button'),
   createClientForm: document.querySelector('#create-client-form'),
+  createBusinessForm: document.querySelector('#create-business-form'),
+  businessNameInput: document.querySelector('#business-name-input'),
+  businessFlowInput: document.querySelector('#business-flow-input'),
+  businessApiUrlInput: document.querySelector('#business-api-url-input'),
+  businessApiKeyInput: document.querySelector('#business-api-key-input'),
   clientNameInput: document.querySelector('#client-name-input'),
+  clientBusinessInput: document.querySelector('#client-business-input'),
   clientSearchInput: document.querySelector('#client-search-input'),
   clientsList: document.querySelector('#clients-list'),
   emptyState: document.querySelector('#empty-state'),
@@ -126,7 +133,7 @@ function filteredClients() {
   if (!query) return state.clients;
 
   return state.clients.filter((client) => {
-    const haystack = `${client.id} ${client.clientName || ''} ${client.status || ''}`.toLowerCase();
+    const haystack = `${client.id} ${client.clientName || ''} ${client.businessName || ''} ${client.status || ''}`.toLowerCase();
     return haystack.includes(query);
   });
 }
@@ -161,6 +168,7 @@ function renderClients() {
       <div class="client-row">
         <div>
           <div class="client-title">${escapeHtml(client.clientName || client.id)}</div>
+          <div class="client-meta">${escapeHtml(client.businessName || 'Sin negocio')}</div>
           <div class="client-meta">${escapeHtml(client.id)}</div>
         </div>
         <span class="${statusClass(status)}">${escapeHtml(status)}</span>
@@ -185,7 +193,7 @@ function renderSelectedClient() {
   els.emptyState.classList.add('hidden');
   els.clientDetail.classList.remove('hidden');
   els.selectedClientTitle.textContent = client.clientName || client.id;
-  els.selectedClientMeta.textContent = `${client.id} · ${client.userName || client.userJid || client.dir || 'sin usuario vinculado'}`;
+  els.selectedClientMeta.textContent = `${client.id} · ${client.businessName || 'Sin negocio'} · ${client.userName || client.userJid || client.dir || 'sin usuario vinculado'}`;
   els.selectedClientStatus.className = statusClass(status);
   els.selectedClientStatus.textContent = status;
 
@@ -230,8 +238,18 @@ async function loadClients() {
   renderAll();
 }
 
+async function loadBusinesses() {
+  state.businesses = await api('/businesses');
+  els.clientBusinessInput.innerHTML = state.businesses
+    .map((business) => {
+      const flowLabel = business.flowType === 'reservas' ? 'Reservas' : 'Sin respuestas automaticas';
+      return `<option value="${escapeHtml(business.id)}">${escapeHtml(business.name)} — ${flowLabel}</option>`;
+    })
+    .join('');
+}
+
 async function refreshAll() {
-  await loadServerInfo();
+  await Promise.all([loadServerInfo(), loadBusinesses()]);
   await loadClients();
 }
 
@@ -264,6 +282,10 @@ function connectRealtimeEvents() {
 
   source.addEventListener('client:delete', () => {
     scheduleSelectedRefresh();
+  });
+
+  source.addEventListener('business:update', () => {
+    loadBusinesses().catch((error) => showToast(error.message));
   });
 
   source.addEventListener('message:new', (event) => {
@@ -304,11 +326,12 @@ async function createClient(event) {
   event.preventDefault();
 
   const clientName = els.clientNameInput.value.trim();
-  if (!clientName) return;
+  const businessId = els.clientBusinessInput.value;
+  if (!clientName || !businessId) return;
 
   const result = await api('/clients', {
     method: 'POST',
-    body: JSON.stringify({ clientName })
+    body: JSON.stringify({ clientName, businessId })
   });
 
   els.clientNameInput.value = '';
@@ -317,6 +340,27 @@ async function createClient(event) {
   showToast('Cliente creado. Abri el QR para vincular WhatsApp.');
   await loadClients();
   openQr();
+}
+
+async function createBusiness(event) {
+  event.preventDefault();
+
+  const payload = {
+    name: els.businessNameInput.value.trim(),
+    flowType: els.businessFlowInput.value,
+    apiUrl: els.businessApiUrlInput.value.trim(),
+    apiKey: els.businessApiKeyInput.value.trim()
+  };
+
+  const result = await api('/businesses', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  event.currentTarget.reset();
+  await loadBusinesses();
+  els.clientBusinessInput.value = result.business.id;
+  showToast('Negocio guardado. Ya podes asignarle un numero de WhatsApp.');
 }
 
 async function runClientAction(action, successMessage) {
@@ -516,6 +560,7 @@ async function loadMessages() {
 
 els.refreshButton.addEventListener('click', () => refreshAll().catch((error) => showToast(error.message)));
 els.createClientForm.addEventListener('submit', (event) => createClient(event).catch((error) => showToast(error.message)));
+els.createBusinessForm.addEventListener('submit', (event) => createBusiness(event).catch((error) => showToast(error.message)));
 els.clientSearchInput.addEventListener('input', (event) => {
   state.search = event.target.value;
   renderClients();

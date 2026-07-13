@@ -18,14 +18,17 @@ import {
   isDatabaseEnabled,
   deleteDbClient,
   getBotFlowState,
+  getBusinessProfile,
   getCanonicalConversationJid,
   hasRecentLidVerificationRequest,
   linkConversationAlias,
   listConversations,
+  listBusinessProfiles,
   listDbClients,
   listMessages,
   listUnlinkedLidConversations,
   saveIncomingMessage,
+  saveBusinessProfile,
   saveBotFlowState,
   saveOutgoingMessage,
   shouldAskForLidVerification,
@@ -33,6 +36,7 @@ import {
   upsertClient
 } from './db.js';
 import { handleReservationFlow } from './reservationFlow.js';
+import { createReservasApi } from './wpReservasApi.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const LEGACY_SESSION_DIR = process.env.SESSION_DIR || 'sessions/whatsapp';
@@ -45,6 +49,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const ADMIN_DIR = path.join(process.cwd(), 'src', 'admin');
 const MESSAGE_SEND_DELAY_MS = Number(process.env.MESSAGE_SEND_DELAY_MS || 2000);
 const API_KEY = process.env.API_KEY || '';
+const DEFAULT_BUSINESS_ID = 'la-toxica';
 
 const app = express();
 app.use(cors());
@@ -162,6 +167,9 @@ function sessionSummary(session) {
   return {
     id: session.id,
     clientName: session.clientName,
+    businessId: session.businessId,
+    businessName: session.businessName,
+    flowType: session.flowType,
     dir: session.dir,
     status: session.status,
     connected: session.status === 'open',
@@ -171,7 +179,40 @@ function sessionSummary(session) {
   };
 }
 
-function getOrCreateSession(clientName) {
+function defaultBusinessProfile() {
+  return {
+    id: DEFAULT_BUSINESS_ID,
+    name: 'La Toxica',
+    flowType: 'reservas',
+    apiUrl: process.env.WP_RESERVAS_API_URL || '',
+    apiKey: process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || '',
+    settings: {}
+  };
+}
+
+function applyBusinessProfile(session, business = defaultBusinessProfile()) {
+  session.businessId = business.id || DEFAULT_BUSINESS_ID;
+  session.businessName = business.name || session.businessId;
+  session.flowType = business.flowType || 'none';
+  session.businessApiUrl = business.apiUrl || '';
+  session.businessApiKey = business.apiKey || '';
+  session.businessSettings = business.settings || {};
+  return session;
+}
+
+async function resolveBusinessProfile(businessId = DEFAULT_BUSINESS_ID) {
+  if (isDatabaseEnabled()) {
+    return getBusinessProfile(businessId);
+  }
+
+  if (businessId === 'sin-automatizacion') {
+    return { id: businessId, name: 'Sin automatizacion', flowType: 'none', settings: {} };
+  }
+
+  return businessId === DEFAULT_BUSINESS_ID ? defaultBusinessProfile() : null;
+}
+
+function getOrCreateSession(clientName, businessProfile = null) {
   const id = normalizeClientName(clientName);
   if (!id) return null;
 
@@ -189,6 +230,9 @@ function getOrCreateSession(clientName) {
       reconnectTimer: null,
       starting: null
     });
+    applyBusinessProfile(sessions.get(id), businessProfile || defaultBusinessProfile());
+  } else if (businessProfile) {
+    applyBusinessProfile(sessions.get(id), businessProfile);
   }
 
   const session = sessions.get(id);
@@ -396,54 +440,60 @@ async function connectSession(clientName) {
           });
         } else {
           await saveIncomingMessage(session, payload);
-          let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
-          let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
-          let migratedReservationState = null;
+          if (session.flowType === 'reservas') {
+            let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+            let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
+            let migratedReservationState = null;
 
-          if (payload.from?.endsWith('@lid')) {
-            const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
-            if (
-              canonicalJid &&
-              (reservationState?.step === 'ask_phone' || await hasRecentLidVerificationRequest(session.id, payload.from))
-            ) {
-              await linkClientAlias(session, payload.from, canonicalJid);
-              if (reservationState && canonicalConversationJid !== canonicalJid) {
-                migratedReservationState = reservationState;
-                await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+            if (payload.from?.endsWith('@lid')) {
+              const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
+              if (
+                canonicalJid &&
+                (reservationState?.step === 'ask_phone' || await hasRecentLidVerificationRequest(session.id, payload.from))
+              ) {
+                await linkClientAlias(session, payload.from, canonicalJid);
+                if (reservationState && canonicalConversationJid !== canonicalJid) {
+                  migratedReservationState = reservationState;
+                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+                }
+                canonicalConversationJid = canonicalJid;
+                emitAdminEvent('conversation:update', { clientId: session.id });
+                logger.info(
+                  { clientId: session.id, clientName: session.clientName, lid: payload.from, canonicalJid },
+                  'LID relacionado automaticamente por respuesta de verificacion'
+                );
               }
-              canonicalConversationJid = canonicalJid;
-              emitAdminEvent('conversation:update', { clientId: session.id });
-              logger.info(
-                { clientId: session.id, clientName: session.clientName, lid: payload.from, canonicalJid },
-                'LID relacionado automaticamente por respuesta de verificacion'
-              );
             }
-          }
 
-          reservationState = migratedReservationState || await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
-          const flowResult = await handleReservationFlow({
-            state: reservationState,
-            text: payload.text,
-            canonicalJid: canonicalConversationJid,
-            pushName: payload.pushName
-          });
+            reservationState = migratedReservationState || await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
+            const flowResult = await handleReservationFlow({
+              state: reservationState,
+              text: payload.text,
+              canonicalJid: canonicalConversationJid,
+              pushName: payload.pushName,
+              reservasApi: createReservasApi({
+                baseUrl: session.businessApiUrl,
+                apiKey: session.businessApiKey
+              })
+            });
 
-          if (flowResult.state) {
-            await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', flowResult.state);
-          } else if (reservationState) {
-            await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
-          }
+            if (flowResult.state) {
+              await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', flowResult.state);
+            } else if (reservationState) {
+              await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+            }
 
-          for (const reply of flowResult.replies || []) {
-            await sendBotText(session, payload.from, reply);
-          }
+            for (const reply of flowResult.replies || []) {
+              await sendBotText(session, payload.from, reply);
+            }
 
-          if (
-            (!flowResult.replies || flowResult.replies.length === 0) &&
-            payload.from?.endsWith('@lid') &&
-            await shouldAskForLidVerification(session.id, payload.from)
-          ) {
-            await sendBotText(session, payload.from, buildLidVerificationMessage(session));
+            if (
+              (!flowResult.replies || flowResult.replies.length === 0) &&
+              payload.from?.endsWith('@lid') &&
+              await shouldAskForLidVerification(session.id, payload.from)
+            ) {
+              await sendBotText(session, payload.from, buildLidVerificationMessage(session));
+            }
           }
           emitAdminEvent('message:new', {
             clientId: session.id,
@@ -628,7 +678,23 @@ async function ensureSessionForRequest(req, res, next) {
     return next();
   }
 
-  const session = getOrCreateSession(requestedName);
+  let businessProfile = null;
+  if (id && !sessions.has(id) && isDatabaseEnabled()) {
+    const clients = await listDbClients();
+    const client = clients.find((item) => item.id === id);
+    if (client) {
+      businessProfile = {
+        id: client.businessId,
+        name: client.businessName,
+        flowType: client.flowType,
+        apiUrl: client.apiUrl,
+        apiKey: client.apiKey,
+        settings: client.settings
+      };
+    }
+  }
+
+  const session = getOrCreateSession(requestedName, businessProfile);
   if (!session) {
     return res.status(400).json({
       error: 'Nombre de cliente invalido.'
@@ -641,7 +707,14 @@ async function ensureSessionForRequest(req, res, next) {
 
 async function createClientHandler(req, res) {
   const clientName = req.body.clientName || req.body.name;
-  const session = getOrCreateSession(clientName);
+  const businessId = req.body.businessId || DEFAULT_BUSINESS_ID;
+  const businessProfile = await resolveBusinessProfile(businessId);
+
+  if (!businessProfile) {
+    return res.status(400).json({ error: 'El negocio seleccionado no existe o esta deshabilitado.' });
+  }
+
+  const session = getOrCreateSession(clientName, businessProfile);
 
   if (!session) {
     return res.status(400).json({
@@ -954,10 +1027,52 @@ app.get('/', (_req, res) => {
 
 app.get('/clients', async (_req, res) => {
   if (isDatabaseEnabled()) {
-    return res.json(await listDbClients());
+    const clients = await listDbClients();
+    return res.json(clients.map(({ apiKey, apiUrl, settings, ...client }) => client));
   }
 
   return res.json([...sessions.values()].map(sessionSummary));
+});
+
+app.get('/businesses', adminAuth, async (_req, res) => {
+  if (isDatabaseEnabled()) {
+    return res.json(await listBusinessProfiles());
+  }
+
+  return res.json([
+    { id: DEFAULT_BUSINESS_ID, name: 'La Toxica', flowType: 'reservas', enabled: true },
+    { id: 'sin-automatizacion', name: 'Sin automatizacion', flowType: 'none', enabled: true }
+  ]);
+});
+
+app.post('/businesses', adminAuth, async (req, res) => {
+  if (!isDatabaseEnabled()) {
+    return res.status(409).json({ error: 'Se necesita PostgreSQL para guardar negocios.' });
+  }
+
+  const name = String(req.body.name || '').trim();
+  const id = normalizeClientName(req.body.id || name);
+  const flowType = String(req.body.flowType || 'none');
+  const apiUrl = String(req.body.apiUrl || '').trim();
+  const apiKey = String(req.body.apiKey || '').trim();
+
+  if (!id || !name) {
+    return res.status(400).json({ error: 'El negocio necesita un nombre valido.' });
+  }
+  if (!['reservas', 'none'].includes(flowType)) {
+    return res.status(400).json({ error: 'El tipo de flujo no es valido.' });
+  }
+  if (flowType === 'reservas' && (!apiUrl || !apiKey)) {
+    return res.status(400).json({ error: 'El flujo de reservas necesita URL y API key.' });
+  }
+
+  const business = await saveBusinessProfile({ id, name, flowType, apiUrl, apiKey });
+  const privateBusiness = await getBusinessProfile(id);
+  for (const session of sessions.values()) {
+    if (session.businessId === id) applyBusinessProfile(session, privateBusiness);
+  }
+  emitAdminEvent('business:update', { business });
+  return res.status(201).json({ ok: true, business });
 });
 
 app.post('/clients', createClientHandler);
@@ -1169,21 +1284,37 @@ async function startServer() {
 }
 
 async function autoStartClients() {
-  let clientNames = [];
-
   if (isDatabaseEnabled()) {
     const clients = await listDbClients();
-    clientNames = clients
-      .filter((client) => client.status !== 'logged_out')
-      .map((client) => client.clientName || client.id);
-  } else {
+    const knownClientIds = new Set(clients.map((client) => client.id));
+    for (const client of clients.filter((item) => item.status !== 'logged_out')) {
+      const clientName = client.clientName || client.id;
+      getOrCreateSession(clientName, {
+        id: client.businessId,
+        name: client.businessName,
+        flowType: client.flowType,
+        apiUrl: client.apiUrl,
+        apiKey: client.apiKey,
+        settings: client.settings
+      });
+      connectSession(clientName).catch((error) => {
+        logger.warn({ clientName, error }, 'No se pudo auto-iniciar cliente');
+      });
+    }
+
     const entries = await fs.readdir(SESSION_ROOT, { withFileTypes: true }).catch(() => []);
-    clientNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    for (const entry of entries.filter((item) => item.isDirectory() && !knownClientIds.has(item.name))) {
+      connectSession(entry.name).catch((error) => {
+        logger.warn({ clientName: entry.name, error }, 'No se pudo migrar la sesion local');
+      });
+    }
+    return;
   }
 
-  for (const clientName of clientNames) {
-    connectSession(clientName).catch((error) => {
-      logger.warn({ clientName, error }, 'No se pudo auto-iniciar cliente');
+  const entries = await fs.readdir(SESSION_ROOT, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries.filter((item) => item.isDirectory())) {
+    connectSession(entry.name).catch((error) => {
+      logger.warn({ clientName: entry.name, error }, 'No se pudo auto-iniciar cliente');
     });
   }
 }

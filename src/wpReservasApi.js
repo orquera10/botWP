@@ -1,13 +1,17 @@
 import dns from 'node:dns';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const DEFAULT_BASE_URL = 'https://mediumslateblue-pony-524766.hostingersite.com/wp_reservas_api.php';
 
-const baseUrl = process.env.WP_RESERVAS_API_URL || DEFAULT_BASE_URL;
-const apiKey = process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || '';
+const defaultConfig = {
+  baseUrl: process.env.WP_RESERVAS_API_URL || DEFAULT_BASE_URL,
+  apiKey: process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || ''
+};
+const apiContext = new AsyncLocalStorage();
 
 dns.setDefaultResultOrder?.('ipv4first');
 
-function buildUrl(action, params = {}) {
+function buildUrl(baseUrl, action, params = {}) {
   const url = new URL(baseUrl);
   url.searchParams.set('action', action);
 
@@ -20,12 +24,13 @@ function buildUrl(action, params = {}) {
   return url;
 }
 
-async function request(action, { method = 'GET', params = {}, body = null } = {}) {
+async function request(config, action, { method = 'GET', params = {}, body = null } = {}) {
+  const { baseUrl, apiKey } = config;
   if (!apiKey) {
     throw new Error('Falta configurar API_KEY o WP_RESERVAS_API_KEY.');
   }
 
-  const url = buildUrl(action, params);
+  const url = buildUrl(baseUrl, action, params);
   let response;
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -64,50 +69,60 @@ async function request(action, { method = 'GET', params = {}, body = null } = {}
   return data;
 }
 
-export function reservasApiConfigured() {
-  return Boolean(baseUrl && apiKey);
+export function createReservasApi(config = {}) {
+  const resolvedConfig = {
+    baseUrl: config.baseUrl || '',
+    apiKey: config.apiKey || ''
+  };
+
+  return {
+    configured: () => Boolean(resolvedConfig.baseUrl && resolvedConfig.apiKey),
+    async listarCanchas() {
+      const data = await request(resolvedConfig, 'canchas');
+      return data.canchas || [];
+    },
+    async listarTerminos({ tipo = 'turno', cancha } = {}) {
+      const data = await request(resolvedConfig, 'terminos', { params: { tipo, cancha } });
+      return data.terminos || [];
+    },
+    async consultarDisponibilidad({ fecha, cancha, duracion }) {
+      const data = await request(resolvedConfig, 'disponibilidad', {
+        params: { fecha, cancha, duracion }
+      });
+      return data.slots || [];
+    },
+    consultarTurnos({ telefono, email, futuros = 1, limite = 5 }) {
+      return request(resolvedConfig, 'turnos', {
+        params: { telefono, email, futuros, limite }
+      });
+    },
+    consultarCliente({ telefono, email }) {
+      return request(resolvedConfig, 'cliente', { params: { telefono, email } });
+    },
+    crearCliente({ nombre, email, telefono }) {
+      return request(resolvedConfig, 'crear_cliente', {
+        method: 'POST',
+        body: { nombre, email, telefono }
+      });
+    },
+    crearReserva(payload) {
+      return request(resolvedConfig, 'reservar', { method: 'POST', body: payload });
+    }
+  };
 }
 
-export async function listarCanchas() {
-  const data = await request('canchas');
-  return data.canchas || [];
+const defaultApi = createReservasApi(defaultConfig);
+const activeApi = () => apiContext.getStore() || defaultApi;
+
+export function withReservasApi(api, callback) {
+  return apiContext.run(api || defaultApi, callback);
 }
 
-export async function listarTerminos({ tipo = 'turno', cancha } = {}) {
-  const data = await request('terminos', { params: { tipo, cancha } });
-  return data.terminos || [];
-}
-
-export async function consultarDisponibilidad({ fecha, cancha, duracion }) {
-  const data = await request('disponibilidad', {
-    params: { fecha, cancha, duracion }
-  });
-
-  return data.slots || [];
-}
-
-export async function consultarTurnos({ telefono, email, futuros = 1, limite = 5 }) {
-  return request('turnos', {
-    params: { telefono, email, futuros, limite }
-  });
-}
-
-export async function consultarCliente({ telefono, email }) {
-  return request('cliente', {
-    params: { telefono, email }
-  });
-}
-
-export async function crearCliente({ nombre, email, telefono }) {
-  return request('crear_cliente', {
-    method: 'POST',
-    body: { nombre, email, telefono }
-  });
-}
-
-export async function crearReserva(payload) {
-  return request('reservar', {
-    method: 'POST',
-    body: payload
-  });
-}
+export const reservasApiConfigured = () => activeApi().configured();
+export const listarCanchas = (...args) => activeApi().listarCanchas(...args);
+export const listarTerminos = (...args) => activeApi().listarTerminos(...args);
+export const consultarDisponibilidad = (...args) => activeApi().consultarDisponibilidad(...args);
+export const consultarTurnos = (...args) => activeApi().consultarTurnos(...args);
+export const consultarCliente = (...args) => activeApi().consultarCliente(...args);
+export const crearCliente = (...args) => activeApi().crearCliente(...args);
+export const crearReserva = (...args) => activeApi().crearReserva(...args);

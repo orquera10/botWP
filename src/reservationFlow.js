@@ -6,7 +6,8 @@ import {
   crearReserva,
   listarCanchas,
   listarTerminos,
-  reservasApiConfigured
+  reservasApiConfigured,
+  withReservasApi
 } from './wpReservasApi.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
@@ -822,7 +823,7 @@ function summaryMessage(data) {
 
 export async function handleReservationFlow(input) {
   try {
-    return await continueFlow(input);
+    return await withReservasApi(input.reservasApi, () => continueFlow(input));
   } catch (error) {
     return {
       state: input.state || null,

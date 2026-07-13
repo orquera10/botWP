@@ -19,6 +19,24 @@ npm run dev
 
 ## Crear un cliente
 
+Cada numero de WhatsApp se asocia a un perfil de negocio. El perfil define el flujo de respuestas y la API que usa. El servidor crea automaticamente `la-toxica` y `sin-automatizacion`; desde el panel admin se pueden agregar otros negocios.
+
+Para crear un perfil de reservas por API:
+
+```http
+POST http://localhost:3000/businesses
+Content-Type: application/json
+
+{
+  "name": "Padel Norte",
+  "flowType": "reservas",
+  "apiUrl": "https://ejemplo.com/api.php",
+  "apiKey": "clave-del-negocio"
+}
+```
+
+La API key queda en el servidor y no se devuelve al navegador al listar clientes o negocios.
+
 En Postman:
 
 ```http
@@ -26,7 +44,8 @@ POST http://localhost:3000/clients
 Content-Type: application/json
 
 {
-  "clientName": "Cliente Demo"
+  "clientName": "Cliente Demo",
+  "businessId": "la-toxica"
 }
 ```
 

@@ -463,7 +463,7 @@ async function loadConversations() {
   for (const conversation of conversations) {
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = 'client-item';
+    item.className = 'client-item conversation-item';
     item.innerHTML = `
       <div class="conversation-title">${escapeHtml(conversation.pushName || conversation.jid)}</div>
       <div class="conversation-meta">${escapeHtml(conversation.jid)}</div>

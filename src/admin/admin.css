@@ -287,6 +287,10 @@ p {
   min-width: 0;
 }
 
+.conversations-list {
+  overflow-x: hidden;
+}
+
 .client-item,
 .conversation-item,
 .message-item,
@@ -319,6 +323,8 @@ p {
   color: var(--text);
   text-align: left;
   cursor: pointer;
+  white-space: normal;
+  overflow: hidden;
 }
 
 .client-item:hover,

@@ -128,6 +128,22 @@ function paymentTotals(data) {
   };
 }
 
+function netPaymentTotals(data, { monthly = false } = {}) {
+  const income = paymentTotals(data);
+  const expenses = monthly ? (data.gastos || {}) : (data.gastos?.totales || {});
+  const services = monthly ? (data.gastos_servicios || {}) : {};
+  const employeePayments = monthly ? (Number(data.pagos_empleados?.total) || 0) : 0;
+  return {
+    cash: income.cash
+      - (Number(expenses.efectivo) || 0)
+      - (Number(services.efectivo) || 0)
+      - employeePayments,
+    transfer: income.transfer
+      - (Number(expenses.transferencia) || 0)
+      - (Number(services.transferencia) || 0)
+  };
+}
+
 function formatAgenda(turnos) {
   const visible = turnos.slice(0, 25);
   const lines = visible.map((turno, index) => {
@@ -150,7 +166,7 @@ function formatAgenda(turnos) {
 
 function formatDailyReport(data) {
   const resumen = data.resumen || {};
-  const payments = paymentTotals(data);
+  const payments = netPaymentTotals(data);
   return [
     `Informe diario del ${data.fecha}:`,
     `Ingresos cobrados: ${money(resumen.ingresos_cobrados)}`,
@@ -160,14 +176,14 @@ function formatDailyReport(data) {
     `Ventas finalizadas: ${data.ventas?.cantidad || 0}`,
     `Señas recibidas: ${data.senias?.cantidad || 0} (${money(data.senias?.totales?.total)})`,
     `Gastos: ${data.gastos?.cantidad || 0} (${money(data.gastos?.totales?.total)})`,
-    `Total efectivo: ${money(payments.cash)}`,
-    `Total transferencias: ${money(payments.transfer)}`
+    `Efectivo neto: ${money(payments.cash)}`,
+    `Transferencias netas: ${money(payments.transfer)}`
   ].join('\n');
 }
 
 function formatMonthlyReport(data) {
   const resumen = data.resumen || {};
-  const payments = paymentTotals(data);
+  const payments = netPaymentTotals(data, { monthly: true });
   const courts = (data.ventas?.por_cancha || []).map((item) =>
     `• ${item.cancha}: ${item.cantidad || 0} ventas · ${money(item.facturado)}`
   );
@@ -176,8 +192,8 @@ function formatMonthlyReport(data) {
     `Ingresos cobrados: ${money(resumen.ingresos_cobrados)}`,
     `Egresos: ${money(resumen.egresos)}`,
     `Resultado neto: ${money(resumen.resultado_neto)}`,
-    `Total efectivo: ${money(payments.cash)}`,
-    `Total transferencias: ${money(payments.transfer)}`,
+    `Efectivo neto: ${money(payments.cash)}`,
+    `Transferencias netas: ${money(payments.transfer)}`,
     '',
     `Ventas: ${data.ventas?.totales?.cantidad || 0} · Facturado: ${money(data.ventas?.totales?.facturado)}`,
     `Señas: ${data.senias?.totales?.cantidad || 0} · ${money(data.senias?.totales?.total)}`,

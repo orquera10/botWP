@@ -32,6 +32,11 @@ export async function initDatabase() {
       updated_at timestamptz not null default now()
     );
 
+    create table if not exists app_migrations (
+      key text primary key,
+      applied_at timestamptz not null default now()
+    );
+
     create table if not exists business_flows (
       business_id text not null references business_profiles(id) on delete cascade,
       flow_name text not null,
@@ -161,6 +166,18 @@ export async function initDatabase() {
     select id, 'reservas'
     from business_profiles
     where flow_type = 'reservas'
+    on conflict (business_id, flow_name) do nothing;
+
+    with migration as (
+      insert into app_migrations (key)
+      values ('split-registration-flow-v1')
+      on conflict (key) do nothing
+      returning key
+    )
+    insert into business_flows (business_id, flow_name)
+    select bp.id, 'registro'
+    from business_profiles bp
+    where bp.flow_type = 'reservas' and exists (select 1 from migration)
     on conflict (business_id, flow_name) do nothing;
 
     update clients set business_id = 'la-toxica' where business_id is null;

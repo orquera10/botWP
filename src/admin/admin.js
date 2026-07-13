@@ -22,6 +22,7 @@ const els = {
   createBusinessForm: document.querySelector('#create-business-form'),
   businessNameInput: document.querySelector('#business-name-input'),
   businessReservationsInput: document.querySelector('#business-reservations-input'),
+  businessRegistrationInput: document.querySelector('#business-registration-input'),
   businessAdminAgendaInput: document.querySelector('#business-admin-agenda-input'),
   businessApiUrlInput: document.querySelector('#business-api-url-input'),
   businessApiKeyInput: document.querySelector('#business-api-key-input'),
@@ -246,7 +247,11 @@ async function loadBusinesses() {
   state.businesses = await api('/businesses');
   els.clientBusinessInput.innerHTML = state.businesses
     .map((business) => {
-      const flowLabels = (business.flows || []).map((flow) => flow === 'reservas' ? 'Reservas' : 'Agenda admin');
+      const flowLabels = (business.flows || []).map((flow) => ({
+        reservas: 'Reservas',
+        registro: 'Registro',
+        admin_agenda: 'Agenda admin'
+      })[flow] || flow);
       const flowLabel = flowLabels.length ? flowLabels.join(' + ') : 'sin respuestas automaticas';
       return `<option value="${escapeHtml(business.id)}">${escapeHtml(business.name)} (${flowLabel})</option>`;
     })
@@ -354,6 +359,7 @@ async function createBusiness(event) {
     name: els.businessNameInput.value.trim(),
     flows: [
       els.businessReservationsInput.checked ? 'reservas' : '',
+      els.businessRegistrationInput.checked ? 'registro' : '',
       els.businessAdminAgendaInput.checked ? 'admin_agenda' : ''
     ].filter(Boolean),
     apiUrl: els.businessApiUrlInput.value.trim(),

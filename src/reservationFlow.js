@@ -261,19 +261,30 @@ async function identifyClientByEmail(email) {
   }
 }
 
-async function startFlow({ phone, pushName }) {
-  const canchas = await listarCanchas();
+async function startFlow({ phone, pushName, registrationAvailable = true }) {
   const identity = phone ? await identifyClient(phone) : { found: false, cliente: null, turnos: [] };
   const cliente = identity.cliente || {};
 
   if (phone && !identity.found) {
-    return startRegisterFlow({
-      phone,
-      pushName,
-      after: 'reservation',
-      intro: 'No encontre tu telefono registrado. Para poder reservar, primero necesito darte de alta.'
-    });
+    if (registrationAvailable) {
+      return {
+        ...startRegisterFlow({
+          phone,
+          pushName,
+          after: 'reservation',
+          intro: 'No encontre tu telefono registrado. Para poder reservar, primero necesito comprobar tus datos.'
+        }),
+        targetFlow: 'registration'
+      };
+    }
+
+    return {
+      state: null,
+      replies: ['No encontre tu telefono registrado. El registro automatico no esta habilitado para este negocio.']
+    };
   }
+
+  const canchas = await listarCanchas();
 
   const data = {
     phone,
@@ -319,6 +330,7 @@ async function finishRegisterFlow(data) {
   if (data.after === 'reservation') {
     const canchas = await listarCanchas();
     return {
+      targetFlow: 'reservation',
       state: buildState('ask_cancha', {
         phone: data.phone,
         nombre: cliente.nombre || data.nombre,
@@ -458,7 +470,8 @@ async function continueFlow({
   canonicalJid,
   pushName,
   businessName = 'el negocio',
-  businessSettings = {}
+  businessSettings = {},
+  registrationAvailable = true
 }) {
   if (!reservasApiConfigured()) {
     return {
@@ -515,7 +528,7 @@ async function continueFlow({
       return startRegisterFlow({ phone, pushName });
     }
 
-    const restarted = await startFlow({ phone: phoneFromJid(canonicalJid), pushName });
+    const restarted = await startFlow({ phone: phoneFromJid(canonicalJid), pushName, registrationAvailable });
     return {
       state: restarted.state,
       replies: [
@@ -565,7 +578,7 @@ async function continueFlow({
     }
 
     if (reservationIntent) {
-      return startFlow({ phone, pushName });
+      return startFlow({ phone, pushName, registrationAvailable });
     }
 
     // Aunque sea un saludo u otro mensaje general, comprobamos si el remitente
@@ -581,14 +594,18 @@ async function continueFlow({
         businessSettings.unregisteredMessage || 'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.',
         { businessName, name: pushName }
       );
-      return startRegisterFlow({
-        phone,
-        pushName,
-        intro: [
-          welcome,
-          unregisteredMessage
-        ].join('\n')
-      });
+      if (registrationAvailable) {
+        return {
+          ...startRegisterFlow({
+            phone,
+            pushName,
+            intro: [welcome, unregisteredMessage].filter(Boolean).join('\n')
+          }),
+          targetFlow: 'registration'
+        };
+      }
+
+      return { state: null, replies: [[welcome, unregisteredMessage].filter(Boolean).join('\n')] };
     }
 
     const cliente = identity.cliente || {};
@@ -655,7 +672,11 @@ async function continueFlow({
       return startRegisterFlow({ phone: onlyDigits(text), pushName: data.pushName || pushName });
     }
 
-    return startFlow({ phone: onlyDigits(text), pushName: data.pushName || pushName });
+    return startFlow({
+      phone: onlyDigits(text),
+      pushName: data.pushName || pushName,
+      registrationAvailable
+    });
   }
 
   if (state.step === 'ask_register_name') {
@@ -846,6 +867,10 @@ function summaryMessage(data) {
 }
 
 export async function handleReservationFlow(input) {
+  if (!input.state && hasRegisterIntent(input.text)) {
+    return { state: null, replies: [] };
+  }
+
   try {
     return await withReservasApi(input.reservasApi, () => continueFlow(input));
   } catch (error) {
@@ -854,6 +879,28 @@ export async function handleReservationFlow(input) {
       replies: [
         `No pude avanzar con la reserva: ${error.message || 'error desconocido'}. Proba de nuevo en unos minutos o escribi cancelar para reiniciar.`
       ]
+    };
+  }
+}
+
+function isRegistrationState(state) {
+  return ['ask_register_name', 'ask_register_email'].includes(state?.step) ||
+    (state?.step === 'ask_phone' && state?.data?.intent === 'register');
+}
+
+export async function handleRegistrationFlow(input) {
+  if (!isRegistrationState(input.state) && !hasRegisterIntent(input.text)) {
+    return { handled: false, state: input.state || null, replies: [] };
+  }
+
+  try {
+    const result = await withReservasApi(input.reservasApi, () => continueFlow(input));
+    return { ...result, handled: true };
+  } catch (error) {
+    return {
+      handled: true,
+      state: input.state || null,
+      replies: [`No pude avanzar con el registro: ${error.message || 'error desconocido'}. Proba de nuevo en unos minutos.`]
     };
   }
 }

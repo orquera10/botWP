@@ -36,7 +36,7 @@ import {
   updateMessageDeliveryStatus,
   upsertClient
 } from './db.js';
-import { handleReservationFlow } from './reservationFlow.js';
+import { handleRegistrationFlow, handleReservationFlow } from './reservationFlow.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 
@@ -187,7 +187,7 @@ function defaultBusinessProfile() {
     id: DEFAULT_BUSINESS_ID,
     name: 'La Toxica',
     flowType: 'reservas',
-    flows: ['reservas'],
+    flows: ['registro', 'reservas'],
     apiUrl: process.env.WP_RESERVAS_API_URL || '',
     apiKey: process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || '',
     settings: {}
@@ -200,7 +200,7 @@ function applyBusinessProfile(session, business = defaultBusinessProfile()) {
   session.flowType = business.flowType || 'none';
   session.businessFlows = Array.isArray(business.flows)
     ? business.flows
-    : session.flowType === 'reservas' ? ['reservas'] : [];
+    : session.flowType === 'reservas' ? ['registro', 'reservas'] : [];
   session.businessApiUrl = business.apiUrl || '';
   session.businessApiKey = business.apiKey || '';
   session.businessSettings = business.settings || {};
@@ -487,7 +487,38 @@ async function connectSession(clientName) {
             }
           }
 
-          if (!handledByAdminFlow && session.businessFlows.includes('reservas')) {
+          let handledByRegistrationFlow = false;
+          if (!handledByAdminFlow && session.businessFlows.includes('registro')) {
+            const registrationState = await getBotFlowState(session.id, canonicalConversationJid, 'registration');
+            const registrationResult = await handleRegistrationFlow({
+              state: registrationState,
+              text: payload.text,
+              canonicalJid: canonicalConversationJid,
+              pushName: payload.pushName,
+              reservasApi,
+              businessName: session.businessName,
+              businessSettings: session.businessSettings
+            });
+            handledByRegistrationFlow = registrationResult.handled;
+
+            if (registrationResult.targetFlow === 'reservation') {
+              if (registrationState) {
+                await clearBotFlowState(session.id, canonicalConversationJid, 'registration');
+              }
+              if (registrationResult.state) {
+                await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', registrationResult.state);
+              }
+            } else if (registrationResult.state) {
+              await saveBotFlowState(session.id, canonicalConversationJid, 'registration', registrationResult.state);
+            } else if (registrationState) {
+              await clearBotFlowState(session.id, canonicalConversationJid, 'registration');
+            }
+            for (const reply of registrationResult.replies || []) {
+              await sendBotText(session, payload.from, reply);
+            }
+          }
+
+          if (!handledByAdminFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
             let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
             let migratedReservationState = null;
 
@@ -519,10 +550,18 @@ async function connectSession(clientName) {
               pushName: payload.pushName,
               reservasApi,
               businessName: session.businessName,
-              businessSettings: session.businessSettings
+              businessSettings: session.businessSettings,
+              registrationAvailable: session.businessFlows.includes('registro')
             });
 
-            if (flowResult.state) {
+            if (flowResult.targetFlow === 'registration') {
+              if (reservationState) {
+                await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+              }
+              if (flowResult.state) {
+                await saveBotFlowState(session.id, canonicalConversationJid, 'registration', flowResult.state);
+              }
+            } else if (flowResult.state) {
               await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', flowResult.state);
             } else if (reservationState) {
               await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
@@ -1086,7 +1125,7 @@ app.get('/businesses', adminAuth, async (_req, res) => {
   }
 
   return res.json([
-    { id: DEFAULT_BUSINESS_ID, name: 'La Toxica', flowType: 'reservas', flows: ['reservas'], enabled: true },
+    { id: DEFAULT_BUSINESS_ID, name: 'La Toxica', flowType: 'reservas', flows: ['registro', 'reservas'], enabled: true },
     { id: 'sin-automatizacion', name: 'Sin automatizacion', flowType: 'none', flows: [], enabled: true }
   ]);
 });
@@ -1099,7 +1138,7 @@ app.post('/businesses', adminAuth, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const id = normalizeClientName(req.body.id || name);
   const flows = [...new Set(Array.isArray(req.body.flows) ? req.body.flows.map(String) : [])];
-  const allowedFlows = ['reservas', 'admin_agenda'];
+  const allowedFlows = ['reservas', 'registro', 'admin_agenda'];
   const flowType = flows.includes('reservas') ? 'reservas' : 'none';
   const apiUrl = String(req.body.apiUrl || '').trim();
   const apiKey = String(req.body.apiKey || '').trim();

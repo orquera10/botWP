@@ -274,6 +274,35 @@ p {
   margin-top: 12px;
 }
 
+.flow-options {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.flow-options legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.flow-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text) !important;
+  font-weight: 400 !important;
+}
+
+.flow-option input {
+  width: auto;
+  margin: 2px 0 0;
+}
+
 .inline-row {
   display: grid;
   grid-template-columns: 1fr auto;

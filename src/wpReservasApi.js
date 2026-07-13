@@ -72,7 +72,8 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
 export function createReservasApi(config = {}) {
   const resolvedConfig = {
     baseUrl: config.baseUrl || '',
-    apiKey: config.apiKey || ''
+    apiKey: config.apiKey || '',
+    adminAgendaAction: config.adminAgendaAction || 'agenda'
   };
 
   return {
@@ -95,6 +96,12 @@ export function createReservasApi(config = {}) {
       return request(resolvedConfig, 'turnos', {
         params: { telefono, email, futuros, limite }
       });
+    },
+    async consultarAgenda({ fecha }) {
+      const data = await request(resolvedConfig, resolvedConfig.adminAgendaAction, {
+        params: { fecha }
+      });
+      return data.turnos || data.reservas || [];
     },
     consultarCliente({ telefono, email }) {
       return request(resolvedConfig, 'cliente', { params: { telefono, email } });

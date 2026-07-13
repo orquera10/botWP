@@ -59,6 +59,12 @@ function normalizeText(text) {
     .toLowerCase();
 }
 
+function renderBusinessText(template, { businessName, name }) {
+  return String(template || '')
+    .replaceAll('{businessName}', businessName)
+    .replaceAll('{name}', name || '');
+}
+
 function hasReservationIntent(text) {
   const normalized = normalizeText(text);
   return TRIGGER_WORDS.some((word) => normalized.includes(word));
@@ -446,7 +452,14 @@ async function askDisponibilidad(data) {
   };
 }
 
-async function continueFlow({ state, text, canonicalJid, pushName }) {
+async function continueFlow({
+  state,
+  text,
+  canonicalJid,
+  pushName,
+  businessName = 'el negocio',
+  businessSettings = {}
+}) {
   if (!reservasApiConfigured()) {
     return {
       state: null,
@@ -560,25 +573,36 @@ async function continueFlow({ state, text, canonicalJid, pushName }) {
     // automática hasta que expresen una intención de reserva o consulta.
     const identity = await identifyClient(phone);
     if (!identity.found) {
+      const welcome = renderBusinessText(
+        businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.',
+        { businessName, name: pushName }
+      ).replace('¡Hola, !', '¡Hola!');
+      const unregisteredMessage = renderBusinessText(
+        businessSettings.unregisteredMessage || 'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.',
+        { businessName, name: pushName }
+      );
       return startRegisterFlow({
         phone,
         pushName,
         intro: [
-          pushName ? `¡Hola, ${pushName}! Bienvenido a La Tóxica FC.` : '¡Bienvenido a La Tóxica FC!',
-          'Tu cancha de fútbol te espera.',
-          'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.'
+          welcome,
+          unregisteredMessage
         ].join('\n')
       });
     }
 
     const cliente = identity.cliente || {};
     const nombre = cliente.nombre || pushName || '';
+    const welcome = renderBusinessText(
+      businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.',
+      { businessName, name: nombre }
+    ).replace('¡Hola, !', '¡Hola!');
     return {
       state: null,
       replies: [
         [
-          nombre ? `¡Hola, ${nombre}! Bienvenido a La Tóxica FC.` : '¡Bienvenido a La Tóxica FC!',
-          'Tu cancha de fútbol te espera. ¿En que puedo ayudarte?',
+          welcome,
+          '¿En que puedo ayudarte?',
           '',
           'Escribi una de estas opciones:',
           '- "reservar" para hacer una reserva',

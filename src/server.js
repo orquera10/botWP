@@ -19,6 +19,7 @@ import {
   deleteDbClient,
   getBotFlowState,
   getBusinessProfile,
+  getBusinessUserRole,
   getCanonicalConversationJid,
   hasRecentLidVerificationRequest,
   linkConversationAlias,
@@ -36,6 +37,7 @@ import {
   upsertClient
 } from './db.js';
 import { handleReservationFlow } from './reservationFlow.js';
+import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -170,6 +172,7 @@ function sessionSummary(session) {
     businessId: session.businessId,
     businessName: session.businessName,
     flowType: session.flowType,
+    flows: session.businessFlows,
     dir: session.dir,
     status: session.status,
     connected: session.status === 'open',
@@ -184,6 +187,7 @@ function defaultBusinessProfile() {
     id: DEFAULT_BUSINESS_ID,
     name: 'La Toxica',
     flowType: 'reservas',
+    flows: ['reservas'],
     apiUrl: process.env.WP_RESERVAS_API_URL || '',
     apiKey: process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || '',
     settings: {}
@@ -194,6 +198,9 @@ function applyBusinessProfile(session, business = defaultBusinessProfile()) {
   session.businessId = business.id || DEFAULT_BUSINESS_ID;
   session.businessName = business.name || session.businessId;
   session.flowType = business.flowType || 'none';
+  session.businessFlows = Array.isArray(business.flows)
+    ? business.flows
+    : session.flowType === 'reservas' ? ['reservas'] : [];
   session.businessApiUrl = business.apiUrl || '';
   session.businessApiKey = business.apiKey || '';
   session.businessSettings = business.settings || {};
@@ -206,7 +213,7 @@ async function resolveBusinessProfile(businessId = DEFAULT_BUSINESS_ID) {
   }
 
   if (businessId === 'sin-automatizacion') {
-    return { id: businessId, name: 'Sin automatizacion', flowType: 'none', settings: {} };
+    return { id: businessId, name: 'Sin automatizacion', flowType: 'none', flows: [], settings: {} };
   }
 
   return businessId === DEFAULT_BUSINESS_ID ? defaultBusinessProfile() : null;
@@ -440,8 +447,47 @@ async function connectSession(clientName) {
           });
         } else {
           await saveIncomingMessage(session, payload);
-          if (session.flowType === 'reservas') {
-            let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+          let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+          const reservasApi = createReservasApi({
+            baseUrl: session.businessApiUrl,
+            apiKey: session.businessApiKey,
+            adminAgendaAction: session.businessSettings.adminAgendaAction || 'agenda'
+          });
+          let handledByAdminFlow = false;
+
+          if (session.businessFlows.includes('admin_agenda')) {
+            const senderPhone = canonicalConversationJid?.endsWith('@s.whatsapp.net')
+              ? canonicalConversationJid.split('@')[0].replace(/\D/g, '')
+              : '';
+            const senderRole = await getBusinessUserRole(session.businessId, senderPhone);
+            if (senderRole === 'admin') {
+              const adminState = await getBotFlowState(session.id, canonicalConversationJid, 'admin_agenda');
+              const adminResult = await handleAdminScheduleFlow({
+                state: adminState,
+                text: payload.text,
+                reservasApi,
+                businessName: session.businessName
+              });
+              handledByAdminFlow = adminResult.handled;
+
+              if (adminResult.state) {
+                await saveBotFlowState(session.id, canonicalConversationJid, 'admin_agenda', adminResult.state);
+              } else if (adminState) {
+                await clearBotFlowState(session.id, canonicalConversationJid, 'admin_agenda');
+              }
+              for (const reply of adminResult.replies || []) {
+                await sendBotText(session, payload.from, reply);
+              }
+              if (adminResult.error) {
+                logger.warn(
+                  { clientId: session.id, businessId: session.businessId, error: adminResult.error },
+                  'La API del negocio no pudo consultar la agenda administrativa'
+                );
+              }
+            }
+          }
+
+          if (!handledByAdminFlow && session.businessFlows.includes('reservas')) {
             let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
             let migratedReservationState = null;
 
@@ -471,10 +517,9 @@ async function connectSession(clientName) {
               text: payload.text,
               canonicalJid: canonicalConversationJid,
               pushName: payload.pushName,
-              reservasApi: createReservasApi({
-                baseUrl: session.businessApiUrl,
-                apiKey: session.businessApiKey
-              })
+              reservasApi,
+              businessName: session.businessName,
+              businessSettings: session.businessSettings
             });
 
             if (flowResult.state) {
@@ -687,6 +732,7 @@ async function ensureSessionForRequest(req, res, next) {
         id: client.businessId,
         name: client.businessName,
         flowType: client.flowType,
+        flows: client.flows,
         apiUrl: client.apiUrl,
         apiKey: client.apiKey,
         settings: client.settings
@@ -1040,8 +1086,8 @@ app.get('/businesses', adminAuth, async (_req, res) => {
   }
 
   return res.json([
-    { id: DEFAULT_BUSINESS_ID, name: 'La Toxica', flowType: 'reservas', enabled: true },
-    { id: 'sin-automatizacion', name: 'Sin automatizacion', flowType: 'none', enabled: true }
+    { id: DEFAULT_BUSINESS_ID, name: 'La Toxica', flowType: 'reservas', flows: ['reservas'], enabled: true },
+    { id: 'sin-automatizacion', name: 'Sin automatizacion', flowType: 'none', flows: [], enabled: true }
   ]);
 });
 
@@ -1052,21 +1098,41 @@ app.post('/businesses', adminAuth, async (req, res) => {
 
   const name = String(req.body.name || '').trim();
   const id = normalizeClientName(req.body.id || name);
-  const flowType = String(req.body.flowType || 'none');
+  const flows = [...new Set(Array.isArray(req.body.flows) ? req.body.flows.map(String) : [])];
+  const allowedFlows = ['reservas', 'admin_agenda'];
+  const flowType = flows.includes('reservas') ? 'reservas' : 'none';
   const apiUrl = String(req.body.apiUrl || '').trim();
   const apiKey = String(req.body.apiKey || '').trim();
+  const adminPhones = [...new Set((Array.isArray(req.body.adminPhones) ? req.body.adminPhones : [])
+    .map((phone) => String(phone).replace(/\D/g, ''))
+    .filter((phone) => phone.length >= 10 && phone.length <= 15))];
+  const settings = {
+    welcomeMessage: String(req.body.settings?.welcomeMessage || '').trim(),
+    unregisteredMessage: String(req.body.settings?.unregisteredMessage || '').trim(),
+    adminAgendaAction: String(req.body.settings?.adminAgendaAction || 'agenda').trim()
+  };
 
   if (!id || !name) {
     return res.status(400).json({ error: 'El negocio necesita un nombre valido.' });
   }
-  if (!['reservas', 'none'].includes(flowType)) {
-    return res.status(400).json({ error: 'El tipo de flujo no es valido.' });
+  if (flows.some((flow) => !allowedFlows.includes(flow))) {
+    return res.status(400).json({ error: 'Uno de los modulos seleccionados no es valido.' });
   }
-  if (flowType === 'reservas' && (!apiUrl || !apiKey)) {
-    return res.status(400).json({ error: 'El flujo de reservas necesita URL y API key.' });
+  const existingBusiness = await getBusinessProfile(id);
+  if (flows.length && (!(apiUrl || existingBusiness?.apiUrl) || (!apiKey && !existingBusiness?.apiKey))) {
+    return res.status(400).json({ error: 'Los modulos automaticos necesitan URL y API key.' });
   }
 
-  const business = await saveBusinessProfile({ id, name, flowType, apiUrl, apiKey });
+  const business = await saveBusinessProfile({
+    id,
+    name,
+    flowType,
+    flows,
+    apiUrl,
+    apiKey,
+    settings,
+    adminPhones
+  });
   const privateBusiness = await getBusinessProfile(id);
   for (const session of sessions.values()) {
     if (session.businessId === id) applyBusinessProfile(session, privateBusiness);
@@ -1293,6 +1359,7 @@ async function autoStartClients() {
         id: client.businessId,
         name: client.businessName,
         flowType: client.flowType,
+        flows: client.flows,
         apiUrl: client.apiUrl,
         apiKey: client.apiKey,
         settings: client.settings

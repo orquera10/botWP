@@ -32,6 +32,27 @@ export async function initDatabase() {
       updated_at timestamptz not null default now()
     );
 
+    create table if not exists business_flows (
+      business_id text not null references business_profiles(id) on delete cascade,
+      flow_name text not null,
+      enabled boolean not null default true,
+      settings jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (business_id, flow_name)
+    );
+
+    create table if not exists business_users (
+      business_id text not null references business_profiles(id) on delete cascade,
+      phone text not null,
+      role text not null default 'admin',
+      display_name text,
+      enabled boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (business_id, phone)
+    );
+
     create table if not exists clients (
       id text primary key,
       client_name text not null,
@@ -136,6 +157,12 @@ export async function initDatabase() {
     values ('sin-automatizacion', 'Sin automatizacion', 'none')
     on conflict (id) do nothing;
 
+    insert into business_flows (business_id, flow_name)
+    select id, 'reservas'
+    from business_profiles
+    where flow_type = 'reservas'
+    on conflict (business_id, flow_name) do nothing;
+
     update clients set business_id = 'la-toxica' where business_id is null;
     alter table clients alter column business_id set default 'la-toxica';
     alter table clients alter column business_id set not null;
@@ -187,7 +214,13 @@ export async function listDbClients() {
   const result = await pool.query(`
     select c.id, c.client_name as "clientName", c.business_id as "businessId",
       b.name as "businessName", b.flow_type as "flowType", b.api_url as "apiUrl", b.api_key as "apiKey",
-      b.settings, c.session_dir as dir, c.status, c.user_jid as "userJid",
+      b.settings,
+      coalesce((
+        select json_agg(bf.flow_name order by bf.flow_name)
+        from business_flows bf
+        where bf.business_id = b.id and bf.enabled = true
+      ), '[]'::json) as flows,
+      c.session_dir as dir, c.status, c.user_jid as "userJid",
       c.user_name as "userName", c.last_error as "lastError", c.created_at as "createdAt", c.updated_at as "updatedAt"
     from clients c
     join business_profiles b on b.id = c.business_id
@@ -203,6 +236,16 @@ export async function listBusinessProfiles() {
   const result = await pool.query(`
     select id, name, flow_type as "flowType", api_url as "apiUrl",
       (api_key is not null and api_key <> '') as "hasApiKey", settings, enabled,
+      coalesce((
+        select json_agg(bf.flow_name order by bf.flow_name)
+        from business_flows bf
+        where bf.business_id = business_profiles.id and bf.enabled = true
+      ), '[]'::json) as flows,
+      coalesce((
+        select json_agg(bu.phone order by bu.phone)
+        from business_users bu
+        where bu.business_id = business_profiles.id and bu.enabled = true and bu.role = 'admin'
+      ), '[]'::json) as "adminPhones",
       created_at as "createdAt", updated_at as "updatedAt"
     from business_profiles
     where enabled = true
@@ -218,7 +261,12 @@ export async function getBusinessProfile(businessId) {
   const result = await pool.query(
     `
       select id, name, flow_type as "flowType", api_url as "apiUrl", api_key as "apiKey",
-        settings, enabled
+        settings, enabled,
+        coalesce((
+          select json_agg(bf.flow_name order by bf.flow_name)
+          from business_flows bf
+          where bf.business_id = business_profiles.id and bf.enabled = true
+        ), '[]'::json) as flows
       from business_profiles
       where id = $1 and enabled = true
       limit 1
@@ -239,7 +287,10 @@ export async function saveBusinessProfile(profile) {
       on conflict (id) do update set
         name = excluded.name,
         flow_type = excluded.flow_type,
-        api_url = excluded.api_url,
+        api_url = case
+          when excluded.api_url is null or excluded.api_url = '' then business_profiles.api_url
+          else excluded.api_url
+        end,
         api_key = case
           when excluded.api_key is null or excluded.api_key = '' then business_profiles.api_key
           else excluded.api_key
@@ -260,7 +311,43 @@ export async function saveBusinessProfile(profile) {
     ]
   );
 
+  if (Array.isArray(profile.flows)) {
+    await pool.query('delete from business_flows where business_id = $1', [profile.id]);
+    for (const flowName of profile.flows) {
+      await pool.query(
+        'insert into business_flows (business_id, flow_name) values ($1, $2)',
+        [profile.id, flowName]
+      );
+    }
+  }
+
+  if (Array.isArray(profile.adminPhones)) {
+    await pool.query("delete from business_users where business_id = $1 and role = 'admin'", [profile.id]);
+    for (const phone of profile.adminPhones) {
+      await pool.query(
+        "insert into business_users (business_id, phone, role) values ($1, $2, 'admin')",
+        [profile.id, phone]
+      );
+    }
+  }
+
   return result.rows[0];
+}
+
+export async function getBusinessUserRole(businessId, phone) {
+  if (!pool || !businessId || !phone) return null;
+
+  const result = await pool.query(
+    `
+      select role
+      from business_users
+      where business_id = $1 and phone = $2 and enabled = true
+      limit 1
+    `,
+    [businessId, phone]
+  );
+
+  return result.rows[0]?.role || null;
 }
 
 export async function deleteDbClient(clientId) {

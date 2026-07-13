@@ -21,9 +21,13 @@ const els = {
   createClientForm: document.querySelector('#create-client-form'),
   createBusinessForm: document.querySelector('#create-business-form'),
   businessNameInput: document.querySelector('#business-name-input'),
-  businessFlowInput: document.querySelector('#business-flow-input'),
+  businessReservationsInput: document.querySelector('#business-reservations-input'),
+  businessAdminAgendaInput: document.querySelector('#business-admin-agenda-input'),
   businessApiUrlInput: document.querySelector('#business-api-url-input'),
   businessApiKeyInput: document.querySelector('#business-api-key-input'),
+  businessWelcomeInput: document.querySelector('#business-welcome-input'),
+  businessUnregisteredInput: document.querySelector('#business-unregistered-input'),
+  businessAdminPhonesInput: document.querySelector('#business-admin-phones-input'),
   clientNameInput: document.querySelector('#client-name-input'),
   clientBusinessInput: document.querySelector('#client-business-input'),
   clientSearchInput: document.querySelector('#client-search-input'),
@@ -242,8 +246,9 @@ async function loadBusinesses() {
   state.businesses = await api('/businesses');
   els.clientBusinessInput.innerHTML = state.businesses
     .map((business) => {
-      const flowLabel = business.flowType === 'reservas' ? 'Reservas' : 'Sin respuestas automaticas';
-      return `<option value="${escapeHtml(business.id)}">${escapeHtml(business.name)} — ${flowLabel}</option>`;
+      const flowLabels = (business.flows || []).map((flow) => flow === 'reservas' ? 'Reservas' : 'Agenda admin');
+      const flowLabel = flowLabels.length ? flowLabels.join(' + ') : 'sin respuestas automaticas';
+      return `<option value="${escapeHtml(business.id)}">${escapeHtml(business.name)} (${flowLabel})</option>`;
     })
     .join('');
 }
@@ -347,9 +352,21 @@ async function createBusiness(event) {
 
   const payload = {
     name: els.businessNameInput.value.trim(),
-    flowType: els.businessFlowInput.value,
+    flows: [
+      els.businessReservationsInput.checked ? 'reservas' : '',
+      els.businessAdminAgendaInput.checked ? 'admin_agenda' : ''
+    ].filter(Boolean),
     apiUrl: els.businessApiUrlInput.value.trim(),
-    apiKey: els.businessApiKeyInput.value.trim()
+    apiKey: els.businessApiKeyInput.value.trim(),
+    settings: {
+      welcomeMessage: els.businessWelcomeInput.value.trim(),
+      unregisteredMessage: els.businessUnregisteredInput.value.trim(),
+      adminAgendaAction: 'agenda'
+    },
+    adminPhones: els.businessAdminPhonesInput.value
+      .split(/[\n,;]+/)
+      .map((phone) => phone.trim())
+      .filter(Boolean)
   };
 
   const result = await api('/businesses', {

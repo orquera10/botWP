@@ -29,13 +29,21 @@ Content-Type: application/json
 
 {
   "name": "Padel Norte",
-  "flowType": "reservas",
+  "flows": ["reservas", "admin_agenda"],
   "apiUrl": "https://ejemplo.com/api.php",
-  "apiKey": "clave-del-negocio"
+  "apiKey": "clave-del-negocio",
+  "settings": {
+    "welcomeMessage": "¡Hola, {name}! Bienvenido a {businessName}.",
+    "unregisteredMessage": "Para continuar necesito comprobar tus datos.",
+    "adminAgendaAction": "agenda"
+  },
+  "adminPhones": ["5491112345678"]
 }
 ```
 
 La API key queda en el servidor y no se devuelve al navegador al listar clientes o negocios.
+
+Los modulos se habilitan por negocio. `reservas` incluye registro, consulta y creacion de reservas. `admin_agenda` solo responde a telefonos incluidos en `adminPhones`; la API del negocio debe implementar la accion configurada en `adminAgendaAction` y aceptar una fecha para devolver todos los turnos de ese dia.
 
 En Postman:
 

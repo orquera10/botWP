@@ -119,6 +119,15 @@ function money(value) {
   }).format(Number(value) || 0);
 }
 
+function paymentTotals(data) {
+  const sales = data.ventas?.totales || {};
+  const deposits = data.senias?.totales || {};
+  return {
+    cash: (Number(sales.efectivo) || 0) + (Number(deposits.efectivo) || 0),
+    transfer: (Number(sales.transferencia) || 0) + (Number(deposits.transferencia) || 0)
+  };
+}
+
 function formatAgenda(turnos) {
   const visible = turnos.slice(0, 25);
   const lines = visible.map((turno, index) => {
@@ -141,6 +150,7 @@ function formatAgenda(turnos) {
 
 function formatDailyReport(data) {
   const resumen = data.resumen || {};
+  const payments = paymentTotals(data);
   return [
     `Informe diario del ${data.fecha}:`,
     `Ingresos cobrados: ${money(resumen.ingresos_cobrados)}`,
@@ -150,13 +160,14 @@ function formatDailyReport(data) {
     `Ventas finalizadas: ${data.ventas?.cantidad || 0}`,
     `Señas recibidas: ${data.senias?.cantidad || 0} (${money(data.senias?.totales?.total)})`,
     `Gastos: ${data.gastos?.cantidad || 0} (${money(data.gastos?.totales?.total)})`,
-    `Efectivo al finalizar: ${money(data.ventas?.totales?.efectivo)}`,
-    `Transferencias al finalizar: ${money(data.ventas?.totales?.transferencia)}`
+    `Total efectivo: ${money(payments.cash)}`,
+    `Total transferencias: ${money(payments.transfer)}`
   ].join('\n');
 }
 
 function formatMonthlyReport(data) {
   const resumen = data.resumen || {};
+  const payments = paymentTotals(data);
   const courts = (data.ventas?.por_cancha || []).map((item) =>
     `• ${item.cancha}: ${item.cantidad || 0} ventas · ${money(item.facturado)}`
   );
@@ -165,6 +176,8 @@ function formatMonthlyReport(data) {
     `Ingresos cobrados: ${money(resumen.ingresos_cobrados)}`,
     `Egresos: ${money(resumen.egresos)}`,
     `Resultado neto: ${money(resumen.resultado_neto)}`,
+    `Total efectivo: ${money(payments.cash)}`,
+    `Total transferencias: ${money(payments.transfer)}`,
     '',
     `Ventas: ${data.ventas?.totales?.cantidad || 0} · Facturado: ${money(data.ventas?.totales?.facturado)}`,
     `Señas: ${data.senias?.totales?.cantidad || 0} · ${money(data.senias?.totales?.total)}`,

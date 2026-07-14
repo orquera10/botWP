@@ -47,8 +47,16 @@
         </div>
 
         <details class="business-config">
-          <summary>Agregar o actualizar negocio</summary>
+          <summary>Administrar negocios</summary>
+          <div class="business-picker">
+            <label for="business-edit-select">Crear o modificar</label>
+            <select id="business-edit-select">
+              <option value="">Crear un negocio nuevo</option>
+            </select>
+            <p class="field-help">Elegí un negocio existente para cargar y modificar su configuración.</p>
+          </div>
           <form id="create-business-form" class="message-form">
+            <div id="business-form-mode" class="business-form-mode">Creando un negocio nuevo</div>
             <label for="business-name-input">Nombre del negocio</label>
             <input id="business-name-input" placeholder="Ej: Padel Norte" required>
             <fieldset class="flow-options">
@@ -70,17 +78,23 @@
             <input id="business-api-url-input" type="url" placeholder="https://ejemplo.com/api.php">
             <label for="business-api-key-input">API key</label>
             <input id="business-api-key-input" type="password" autocomplete="new-password">
+            <p class="field-help">Al editar, dejala vacía para conservar la clave actual.</p>
             <label for="business-admin-api-url-input">URL de la API administrativa</label>
             <input id="business-admin-api-url-input" type="url" placeholder="https://ejemplo.com/admin_api.php">
             <label for="business-admin-api-key-input">API key administrativa</label>
             <input id="business-admin-api-key-input" type="password" autocomplete="new-password">
+            <p class="field-help">Al editar, dejala vacía para conservar la clave actual.</p>
             <label for="business-welcome-input">Saludo de bienvenida</label>
             <textarea id="business-welcome-input" rows="3" placeholder="¡Hola, {name}! Bienvenido a {businessName}."></textarea>
             <label for="business-unregistered-input">Mensaje para usuarios no registrados</label>
             <textarea id="business-unregistered-input" rows="3" placeholder="Para continuar necesito comprobar tus datos."></textarea>
             <label for="business-admin-phones-input">Telefonos administradores</label>
             <textarea id="business-admin-phones-input" rows="3" placeholder="Uno por linea, con codigo de pais"></textarea>
-            <button type="submit">Guardar negocio</button>
+            <p class="field-help">Uno por línea. Para quitar permisos, borrá el número y guardá los cambios.</p>
+            <div class="business-form-actions">
+              <button id="business-submit-button" type="submit">Crear negocio</button>
+              <button id="business-new-button" class="secondary-button hidden" type="button">Crear otro negocio</button>
+            </div>
           </form>
         </details>
 

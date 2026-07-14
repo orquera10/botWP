@@ -7,6 +7,7 @@ const state = {
   search: '',
   refreshTimer: null,
   apiKey: '',
+  editingBusinessId: null,
   realtimeStatus: 'conectando tiempo real'
 };
 
@@ -20,6 +21,10 @@ const els = {
   refreshButton: document.querySelector('#refresh-button'),
   createClientForm: document.querySelector('#create-client-form'),
   createBusinessForm: document.querySelector('#create-business-form'),
+  businessEditSelect: document.querySelector('#business-edit-select'),
+  businessFormMode: document.querySelector('#business-form-mode'),
+  businessSubmitButton: document.querySelector('#business-submit-button'),
+  businessNewButton: document.querySelector('#business-new-button'),
   businessNameInput: document.querySelector('#business-name-input'),
   businessReservationsInput: document.querySelector('#business-reservations-input'),
   businessRegistrationInput: document.querySelector('#business-registration-input'),
@@ -245,7 +250,45 @@ async function loadClients() {
   renderAll();
 }
 
-async function loadBusinesses() {
+function populateBusinessForm(businessId = '') {
+  const business = state.businesses.find((item) => item.id === businessId);
+
+  if (!business) {
+    state.editingBusinessId = null;
+    els.businessEditSelect.value = '';
+    els.createBusinessForm.reset();
+    els.businessReservationsInput.checked = true;
+    els.businessRegistrationInput.checked = true;
+    els.businessAdminAgendaInput.checked = false;
+    els.businessFormMode.textContent = 'Creando un negocio nuevo';
+    els.businessFormMode.classList.remove('editing');
+    els.businessSubmitButton.textContent = 'Crear negocio';
+    els.businessNewButton.classList.add('hidden');
+    return;
+  }
+
+  const flows = business.flows || [];
+  state.editingBusinessId = business.id;
+  els.businessEditSelect.value = business.id;
+  els.businessNameInput.value = business.name || '';
+  els.businessReservationsInput.checked = flows.includes('reservas');
+  els.businessRegistrationInput.checked = flows.includes('registro');
+  els.businessAdminAgendaInput.checked = flows.includes('admin_agenda');
+  els.businessApiUrlInput.value = business.apiUrl || '';
+  els.businessApiKeyInput.value = '';
+  els.businessAdminApiUrlInput.value = business.adminApiUrl || '';
+  els.businessAdminApiKeyInput.value = '';
+  els.businessWelcomeInput.value = business.settings?.welcomeMessage || '';
+  els.businessUnregisteredInput.value = business.settings?.unregisteredMessage || '';
+  els.businessAdminPhonesInput.value = (business.adminPhones || []).join('\n');
+  els.businessFormMode.textContent = `Editando: ${business.name}`;
+  els.businessFormMode.classList.add('editing');
+  els.businessSubmitButton.textContent = 'Guardar cambios';
+  els.businessNewButton.classList.remove('hidden');
+}
+
+async function loadBusinesses({ refreshEditor = false } = {}) {
+  const selectedClientBusiness = els.clientBusinessInput.value;
   state.businesses = await api('/businesses');
   els.clientBusinessInput.innerHTML = state.businesses
     .map((business) => {
@@ -258,6 +301,24 @@ async function loadBusinesses() {
       return `<option value="${escapeHtml(business.id)}">${escapeHtml(business.name)} (${flowLabel})</option>`;
     })
     .join('');
+
+  if (state.businesses.some((business) => business.id === selectedClientBusiness)) {
+    els.clientBusinessInput.value = selectedClientBusiness;
+  }
+
+  els.businessEditSelect.innerHTML = [
+    '<option value="">Crear un negocio nuevo</option>',
+    ...state.businesses.map((business) => (
+      `<option value="${escapeHtml(business.id)}">Modificar: ${escapeHtml(business.name)}</option>`
+    ))
+  ].join('');
+
+  if (state.editingBusinessId && state.businesses.some((business) => business.id === state.editingBusinessId)) {
+    els.businessEditSelect.value = state.editingBusinessId;
+    if (refreshEditor) populateBusinessForm(state.editingBusinessId);
+  } else if (state.editingBusinessId) {
+    populateBusinessForm();
+  }
 }
 
 async function refreshAll() {
@@ -358,6 +419,7 @@ async function createBusiness(event) {
   event.preventDefault();
 
   const payload = {
+    id: state.editingBusinessId || undefined,
     name: els.businessNameInput.value.trim(),
     flows: [
       els.businessReservationsInput.checked ? 'reservas' : '',
@@ -384,10 +446,13 @@ async function createBusiness(event) {
     body: JSON.stringify(payload)
   });
 
-  event.currentTarget.reset();
-  await loadBusinesses();
+  const wasEditing = Boolean(state.editingBusinessId);
+  state.editingBusinessId = result.business.id;
+  await loadBusinesses({ refreshEditor: true });
   els.clientBusinessInput.value = result.business.id;
-  showToast('Negocio guardado. Ya podes asignarle un numero de WhatsApp.');
+  showToast(wasEditing
+    ? 'Cambios guardados. La configuración del negocio ya está actualizada.'
+    : 'Negocio creado. Ya podés asignarle un número de WhatsApp.');
 }
 
 async function runClientAction(action, successMessage) {
@@ -588,6 +653,8 @@ async function loadMessages() {
 els.refreshButton.addEventListener('click', () => refreshAll().catch((error) => showToast(error.message)));
 els.createClientForm.addEventListener('submit', (event) => createClient(event).catch((error) => showToast(error.message)));
 els.createBusinessForm.addEventListener('submit', (event) => createBusiness(event).catch((error) => showToast(error.message)));
+els.businessEditSelect.addEventListener('change', () => populateBusinessForm(els.businessEditSelect.value));
+els.businessNewButton.addEventListener('click', () => populateBusinessForm());
 els.clientSearchInput.addEventListener('input', (event) => {
   state.search = event.target.value;
   renderClients();

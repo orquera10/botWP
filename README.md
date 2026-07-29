@@ -175,6 +175,14 @@ ADMIN_PASSWORD=cambia-esta-clave
 
 Si dejas esas variables vacias, `/admin` queda sin login.
 
+### Error `Stream Errored (conflict)`
+
+Este error significa que WhatsApp reemplazo la conexion de esa sesion por otra
+que usa las mismas credenciales. Detene cualquier otra instancia del bot,
+presiona **Resetear** en el panel y escanea el QR nuevo. No copies la carpeta
+`sessions/clients/<cliente>` entre servidores ni ejecutes dos procesos con esa
+misma carpeta.
+
 ## Multiples clientes
 
 Repeti el flujo con otro `clientName`:

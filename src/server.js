@@ -367,20 +367,26 @@ async function connectSession(clientName) {
     const { state, saveCreds } = await useMultiFileAuthState(session.dir);
     const { version } = await fetchLatestBaileysVersion();
 
-    session.sock = makeWASocket({
+    const socket = makeWASocket({
       auth: state,
       version,
       printQRInTerminal: session.id === DEFAULT_SESSION_ID,
       logger: Pino({ level: 'silent' }),
       browser: [`Proyecto WP Bot ${session.id}`, 'Chrome', '1.0.0']
     });
+    session.sock = socket;
 
-    session.sock.ev.on('creds.update', saveCreds);
+    socket.ev.on('creds.update', (creds) => {
+      if (session.sock === socket) {
+        return saveCreds(creds);
+      }
+    });
 
-    session.sock.ev.on('connection.update', async (update) => {
+    socket.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        if (session.sock !== socket) return;
         session.lastQr = qr;
         session.lastQrDataUrl = await QRCode.toDataURL(qr);
         session.status = 'qr';
@@ -390,6 +396,7 @@ async function connectSession(clientName) {
       }
 
       if (connection === 'open') {
+        if (session.sock !== socket) return;
         session.status = 'open';
         session.lastQr = null;
         session.lastQrDataUrl = null;
@@ -400,17 +407,40 @@ async function connectSession(clientName) {
       }
 
       if (connection === 'close') {
+        // Un socket anterior puede cerrarse después de un reset. No debe borrar ni
+        // reconectar por encima del socket nuevo que ya ocupa la sesión.
+        if (session.sock !== socket) return;
+
         const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
+        const connectionReplaced = statusCode === DisconnectReason.connectionReplaced;
+        const requiresRelink = [
+          DisconnectReason.badSession,
+          DisconnectReason.multideviceMismatch,
+          DisconnectReason.forbidden
+        ].includes(statusCode);
 
         session.sock = null;
-        session.status = loggedOut ? 'logged_out' : 'closed';
-        session.lastError = serializeError(lastDisconnect?.error);
+        session.status = loggedOut
+          ? 'logged_out'
+          : connectionReplaced
+            ? 'connection_replaced'
+            : requiresRelink
+              ? 'relink_required'
+              : 'closed';
+        session.lastError = connectionReplaced
+          ? {
+              ...serializeError(lastDisconnect?.error),
+              statusCode,
+              message:
+                'La sesion fue reemplazada por otra conexion. Detene cualquier otra instancia del bot y usa "Resetear" para vincular este dispositivo nuevamente.'
+            }
+          : serializeError(lastDisconnect?.error);
         await upsertClient(session);
         emitAdminEvent('client:update', { client: sessionSummary(session) });
         logger.warn({ clientId: session.id, clientName: session.clientName, statusCode }, 'Conexion de WhatsApp cerrada');
 
-        if (!loggedOut) {
+        if (!loggedOut && !connectionReplaced && !requiresRelink) {
           clearTimeout(session.reconnectTimer);
           session.reconnectTimer = setTimeout(() => {
             session.starting = null;
@@ -424,7 +454,7 @@ async function connectSession(clientName) {
       }
     });
 
-    session.sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    socket.ev.on('messages.upsert', async ({ messages, type }) => {
       for (const message of messages) {
         if (!message.message) continue;
         if (message.key.remoteJid === 'status@broadcast') continue;
@@ -617,7 +647,7 @@ async function connectSession(clientName) {
       }
     });
 
-    session.sock.ev.on('messages.update', async (updates) => {
+    socket.ev.on('messages.update', async (updates) => {
       for (const update of updates) {
         if (!update.key?.id || typeof update.update?.status === 'undefined') continue;
 
@@ -643,8 +673,8 @@ async function connectSession(clientName) {
       }
     }
 
-    session.sock.ev.on('contacts.upsert', handleContacts);
-    session.sock.ev.on('contacts.update', handleContacts);
+    socket.ev.on('contacts.upsert', handleContacts);
+    socket.ev.on('contacts.update', handleContacts);
 
     return session;
   })()
@@ -1421,7 +1451,8 @@ async function autoStartClients() {
   if (isDatabaseEnabled()) {
     const clients = await listDbClients();
     const knownClientIds = new Set(clients.map((client) => client.id));
-    for (const client of clients.filter((item) => item.status !== 'logged_out')) {
+    const manualRecoveryStatuses = new Set(['logged_out', 'connection_replaced', 'relink_required']);
+    for (const client of clients.filter((item) => !manualRecoveryStatuses.has(item.status))) {
       const clientName = client.clientName || client.id;
       getOrCreateSession(clientName, {
         id: client.businessId,

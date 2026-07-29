@@ -469,7 +469,9 @@ p {
 
 .status-logged_out,
 .status-error,
-.status-closed {
+.status-closed,
+.status-connection_replaced,
+.status-relink_required {
   border-color: #fecaca;
   color: var(--danger);
   background: #fef2f2;

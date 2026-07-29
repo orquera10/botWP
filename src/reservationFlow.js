@@ -41,6 +41,11 @@ function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+function normalizeArgentinePhone(value) {
+  const digits = onlyDigits(value);
+  return digits.startsWith('549') ? digits : `549${digits}`;
+}
+
 function phoneFromJid(jid) {
   if (!jid?.endsWith('@s.whatsapp.net')) return '';
   return onlyDigits(jid.split('@')[0]);
@@ -48,7 +53,8 @@ function phoneFromJid(jid) {
 
 function looksLikePhone(text) {
   const digits = onlyDigits(text);
-  return digits.length >= 10 && digits.length <= 15;
+  if (digits.length < 9 || digits.length > 15) return false;
+  return normalizeArgentinePhone(digits).length <= 15;
 }
 
 function normalizeText(text) {
@@ -502,7 +508,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'query' }),
-          replies: ['Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+          replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
         };
       }
 
@@ -521,7 +527,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'register' }),
-          replies: ['Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+          replies: ['Para registrarte necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
         };
       }
 
@@ -552,10 +558,10 @@ async function continueFlow({
         }),
         replies: [
           queryIntent
-            ? 'Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
+            ? 'Para consultar tus reservas necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.'
             : registerIntent || !reservationIntent
-              ? 'Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
-            : 'Para empezar la reserva necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567'
+              ? 'Para registrarte necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.'
+            : 'Para empezar la reserva necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.'
         ]
       };
     }
@@ -637,7 +643,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'query' }),
-        replies: ['Para consultar tus reservas necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+        replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
       };
     }
 
@@ -649,7 +655,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'register' }),
-        replies: ['Para registrarte necesito identificar tu telefono de WhatsApp con codigo de pais. Ejemplo: 5493881234567']
+        replies: ['Para registrarte necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
       };
     }
 
@@ -660,20 +666,20 @@ async function continueFlow({
     if (!looksLikePhone(text)) {
       return {
         state,
-        replies: ['Pasame el numero con codigo de pais, solo numeros o con +. Ejemplo: 5493881234567']
+        replies: ['Pasame el numero, solo con digitos. Podes omitir el 549. Ejemplo: 388900292']
       };
     }
 
     if (data.intent === 'query') {
-      return startQueryFlow({ phone: onlyDigits(text) });
+      return startQueryFlow({ phone: normalizeArgentinePhone(text) });
     }
 
     if (data.intent === 'register') {
-      return startRegisterFlow({ phone: onlyDigits(text), pushName: data.pushName || pushName });
+      return startRegisterFlow({ phone: normalizeArgentinePhone(text), pushName: data.pushName || pushName });
     }
 
     return startFlow({
-      phone: onlyDigits(text),
+      phone: normalizeArgentinePhone(text),
       pushName: data.pushName || pushName,
       registrationAvailable
     });

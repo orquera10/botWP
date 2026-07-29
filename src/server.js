@@ -155,8 +155,8 @@ function isUserVisibleMessage(message) {
 function buildLidVerificationMessage(session) {
   return [
     `Hola, soy el asistente de ${session.clientName}.`,
-    'Para verificar tu contacto y poder responderte correctamente, me pasas tu numero de WhatsApp con codigo de pais?',
-    'Ejemplo: 5493881234567'
+    'Para verificar tu contacto y poder responderte correctamente, me pasas tu numero de WhatsApp?',
+    'Podes enviarlo sin 549, por ejemplo: 388900292. Yo agrego el 549 automaticamente.'
   ].join('\n');
 }
 
@@ -330,9 +330,12 @@ function extractPhoneJidFromVerificationReply(text) {
   if (!raw || raw.includes('@lid')) return null;
 
   const digits = raw.replace(/\D/g, '');
-  if (digits.length < 10 || digits.length > 15) return null;
+  if (digits.length < 9 || digits.length > 15) return null;
 
-  return `${digits}@s.whatsapp.net`;
+  const phone = digits.startsWith('549') ? digits : `549${digits}`;
+  if (phone.length > 15) return null;
+
+  return `${phone}@s.whatsapp.net`;
 }
 
 async function linkClientAlias(session, aliasJid, canonicalJid) {

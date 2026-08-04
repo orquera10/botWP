@@ -79,7 +79,7 @@ function buildWelcomeMessage(businessSettings, businessName, name) {
     .replace('¡Hola, !', '¡Hola!');
 
   if (!catalogUrl || template.includes('{catalogUrl}')) return welcome;
-  return `${welcome}\n\nCatálogo: ${catalogUrl}`;
+  return `${welcome}\n\nProductos: ${catalogUrl}`;
 }
 
 function hasReservationIntent(text) {

@@ -519,7 +519,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'query' }),
-          replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
+          replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
         };
       }
 
@@ -538,7 +538,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'register' }),
-          replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
+          replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
         };
       }
 
@@ -569,10 +569,10 @@ async function continueFlow({
         }),
         replies: [
           queryIntent
-            ? 'Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.'
+            ? 'Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.'
             : registerIntent || !reservationIntent
-              ? 'Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.'
-            : 'Para empezar la reserva necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.'
+              ? 'Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.'
+            : 'Para empezar la reserva necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.'
         ]
       };
     }
@@ -648,7 +648,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'query' }),
-        replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
+        replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
       };
     }
 
@@ -660,7 +660,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'register' }),
-        replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
+        replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
       };
     }
 
@@ -671,7 +671,7 @@ async function continueFlow({
     if (!looksLikePhone(text)) {
       return {
         state,
-        replies: ['Pasame solo el numero local, con digitos. Ejemplo: 3884104530. Yo agrego el 549.']
+        replies: ['Pasame solo el numero local, con digitos. Ejemplo: 3884104530.']
       };
     }
 

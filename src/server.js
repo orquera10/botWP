@@ -156,7 +156,7 @@ function buildLidVerificationMessage(session) {
   return [
     `Hola, soy el asistente de ${session.clientName}.`,
     'Para verificar tu contacto y poder responderte correctamente, me pasas tu numero de WhatsApp?',
-    'Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549 automaticamente.'
+    'Enviame solo el numero local, por ejemplo: 3884104530.'
   ].join('\n');
 }
 

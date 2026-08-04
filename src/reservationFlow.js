@@ -271,9 +271,8 @@ function goBack(state) {
 function compactTerms(terminos) {
   if (!terminos.length) return 'Para continuar necesito que aceptes los terminos de la reserva.';
   return [
-    'Terminos principales:',
-    ...terminos.slice(0, 8).map((item) => `- ${item}`),
-    terminos.length > 8 ? `- Y ${terminos.length - 8} condicion(es) mas.` : ''
+    'Terminos y condiciones de la reserva:',
+    ...terminos.map((item) => `- ${item}`)
   ].filter(Boolean).join('\n');
 }
 

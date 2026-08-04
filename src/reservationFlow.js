@@ -193,13 +193,19 @@ function formatSlots(slots) {
     .join('\n');
 }
 
-function mainMenuMessage() {
+function userMenuMessage(intro = '¿En que puedo ayudarte?') {
   return [
-    'Volvimos al menu principal.',
-    'Escribi "reservar" para hacer una reserva.',
-    'Escribi "mis reservas" para consultar tus turnos.',
-    'Escribi "registrarme" para comprobar tus datos.'
+    intro,
+    '',
+    'Escribi una de estas opciones:',
+    '- "reservar" para hacer una reserva',
+    '- "mis reservas" para consultar tus turnos',
+    '- "registrarme" para comprobar tus datos'
   ].join('\n');
+}
+
+function mainMenuMessage() {
+  return userMenuMessage('Volvimos al menu principal.');
 }
 
 function goBack(state) {
@@ -452,11 +458,12 @@ async function finishRegisterFlow(data) {
   return {
     state: null,
     replies: [
-      updatedByExistingEmail
+      [updatedByExistingEmail
         ? 'Listo, encontre ese email y actualice/asocie tu telefono.'
         : created.created
           ? 'Listo, ya quedaste registrado.'
-          : 'Listo, tus datos ya estaban registrados.'
+          : 'Listo, tus datos ya estaban registrados.',
+      userMenuMessage()].join('\n\n')
     ]
   };
 }
@@ -668,7 +675,10 @@ async function continueFlow({
         const cliente = identity.cliente || {};
         return {
           state: null,
-          replies: [`Ya estas registrado${cliente.nombre ? ` como ${cliente.nombre}` : ''}. Para reservar escribime "reservar".`]
+          replies: [[
+            `Ya estas registrado${cliente.nombre ? ` como ${cliente.nombre}` : ''}.`,
+            userMenuMessage()
+          ].join('\n\n')]
         };
       }
 
@@ -711,12 +721,7 @@ async function continueFlow({
       replies: [
         [
           welcome,
-          '¿En que puedo ayudarte?',
-          '',
-          'Escribi una de estas opciones:',
-          '- "reservar" para hacer una reserva',
-          '- "mis reservas" para consultar tus turnos',
-          '- "registrarme" para comprobar tus datos'
+          userMenuMessage()
         ].join('\n')
       ]
     };

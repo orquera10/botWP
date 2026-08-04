@@ -34,6 +34,7 @@ const els = {
   businessAdminApiUrlInput: document.querySelector('#business-admin-api-url-input'),
   businessAdminApiKeyInput: document.querySelector('#business-admin-api-key-input'),
   businessWelcomeInput: document.querySelector('#business-welcome-input'),
+  businessCatalogUrlInput: document.querySelector('#business-catalog-url-input'),
   businessUnregisteredInput: document.querySelector('#business-unregistered-input'),
   businessAdminPhonesInput: document.querySelector('#business-admin-phones-input'),
   clientNameInput: document.querySelector('#client-name-input'),
@@ -279,6 +280,7 @@ function populateBusinessForm(businessId = '') {
   els.businessAdminApiUrlInput.value = business.adminApiUrl || '';
   els.businessAdminApiKeyInput.value = '';
   els.businessWelcomeInput.value = business.settings?.welcomeMessage || '';
+  els.businessCatalogUrlInput.value = business.settings?.catalogUrl || '';
   els.businessUnregisteredInput.value = business.settings?.unregisteredMessage || '';
   els.businessAdminPhonesInput.value = (business.adminPhones || []).join('\n');
   els.businessFormMode.textContent = `Editando: ${business.name}`;
@@ -432,6 +434,7 @@ async function createBusiness(event) {
     adminApiKey: els.businessAdminApiKeyInput.value.trim(),
     settings: {
       welcomeMessage: els.businessWelcomeInput.value.trim(),
+      catalogUrl: els.businessCatalogUrlInput.value.trim(),
       unregisteredMessage: els.businessUnregisteredInput.value.trim(),
       adminAgendaAction: 'turnos'
     },

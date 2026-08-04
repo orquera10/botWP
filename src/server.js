@@ -197,7 +197,9 @@ function defaultBusinessProfile() {
     apiKey: process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || '',
     adminApiUrl: process.env.ADMIN_API_URL || '',
     adminApiKey: process.env.ADMIN_API_KEY || '',
-    settings: {}
+    settings: {
+      catalogUrl: process.env.CATALOG_URL || ''
+    }
   };
 }
 
@@ -1175,7 +1177,14 @@ app.get('/businesses', adminAuth, async (_req, res) => {
   }
 
   return res.json([
-    { id: DEFAULT_BUSINESS_ID, name: 'La Toxica', flowType: 'reservas', flows: ['registro', 'reservas'], enabled: true },
+    {
+      id: DEFAULT_BUSINESS_ID,
+      name: 'La Toxica',
+      flowType: 'reservas',
+      flows: ['registro', 'reservas'],
+      settings: defaultBusinessProfile().settings,
+      enabled: true
+    },
     { id: 'sin-automatizacion', name: 'Sin automatizacion', flowType: 'none', flows: [], enabled: true }
   ]);
 });
@@ -1200,6 +1209,7 @@ app.post('/businesses', adminAuth, async (req, res) => {
   const settings = {
     welcomeMessage: String(req.body.settings?.welcomeMessage || '').trim(),
     unregisteredMessage: String(req.body.settings?.unregisteredMessage || '').trim(),
+    catalogUrl: String(req.body.settings?.catalogUrl || '').trim(),
     adminAgendaAction: normalizeAdminAgendaAction(req.body.settings?.adminAgendaAction)
   };
 

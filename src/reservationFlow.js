@@ -65,10 +65,21 @@ function normalizeText(text) {
     .toLowerCase();
 }
 
-function renderBusinessText(template, { businessName, name }) {
+function renderBusinessText(template, { businessName, name, catalogUrl = '' }) {
   return String(template || '')
     .replaceAll('{businessName}', businessName)
-    .replaceAll('{name}', name || '');
+    .replaceAll('{name}', name || '')
+    .replaceAll('{catalogUrl}', catalogUrl);
+}
+
+function buildWelcomeMessage(businessSettings, businessName, name) {
+  const template = businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.';
+  const catalogUrl = String(businessSettings.catalogUrl || '').trim();
+  const welcome = renderBusinessText(template, { businessName, name, catalogUrl })
+    .replace('¡Hola, !', '¡Hola!');
+
+  if (!catalogUrl || template.includes('{catalogUrl}')) return welcome;
+  return `${welcome}\n\nCatálogo: ${catalogUrl}`;
 }
 
 function hasReservationIntent(text) {
@@ -592,10 +603,7 @@ async function continueFlow({
     // automática hasta que expresen una intención de reserva o consulta.
     const identity = await identifyClient(phone);
     if (!identity.found) {
-      const welcome = renderBusinessText(
-        businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.',
-        { businessName, name: pushName }
-      ).replace('¡Hola, !', '¡Hola!');
+      const welcome = buildWelcomeMessage(businessSettings, businessName, pushName);
       const unregisteredMessage = renderBusinessText(
         businessSettings.unregisteredMessage || 'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.',
         { businessName, name: pushName }
@@ -616,10 +624,7 @@ async function continueFlow({
 
     const cliente = identity.cliente || {};
     const nombre = cliente.nombre || pushName || '';
-    const welcome = renderBusinessText(
-      businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.',
-      { businessName, name: nombre }
-    ).replace('¡Hola, !', '¡Hola!');
+    const welcome = buildWelcomeMessage(businessSettings, businessName, nombre);
     return {
       state: null,
       replies: [

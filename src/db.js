@@ -150,8 +150,8 @@ export async function initDatabase() {
 
   await pool.query(
     `
-      insert into business_profiles (id, name, flow_type, api_url, api_key, admin_api_url, admin_api_key)
-      values ('la-toxica', 'La Toxica', 'reservas', $1, $2, $3, $4)
+      insert into business_profiles (id, name, flow_type, api_url, api_key, admin_api_url, admin_api_key, settings)
+      values ('la-toxica', 'La Toxica', 'reservas', $1, $2, $3, $4, $5)
       on conflict (id) do update set
         name = excluded.name,
         flow_type = excluded.flow_type,
@@ -159,13 +159,15 @@ export async function initDatabase() {
         api_key = coalesce(excluded.api_key, business_profiles.api_key),
         admin_api_url = coalesce(excluded.admin_api_url, business_profiles.admin_api_url),
         admin_api_key = coalesce(excluded.admin_api_key, business_profiles.admin_api_key),
+        settings = business_profiles.settings || excluded.settings,
         updated_at = now()
     `,
     [
       process.env.WP_RESERVAS_API_URL || null,
       process.env.WP_RESERVAS_API_KEY || process.env.API_KEY || null,
       process.env.ADMIN_API_URL || null,
-      process.env.ADMIN_API_KEY || null
+      process.env.ADMIN_API_KEY || null,
+      JSON.stringify(process.env.CATALOG_URL ? { catalogUrl: process.env.CATALOG_URL } : {})
     ]
   );
 

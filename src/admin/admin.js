@@ -568,7 +568,7 @@ async function loadUnlinkedLids() {
         <div class="conversation-meta">Ultimo mensaje: ${escapeHtml(item.lastMessageText || '')}</div>
       </div>
       <form class="lid-question-form">
-        <input name="phone" placeholder="Ej: 5493885104530" required>
+        <input name="phone" placeholder="Ej: 3884104530 (sin 549)" required>
         <button type="submit">Relacionar</button>
       </form>
     `;

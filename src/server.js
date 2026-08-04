@@ -156,7 +156,7 @@ function buildLidVerificationMessage(session) {
   return [
     `Hola, soy el asistente de ${session.clientName}.`,
     'Para verificar tu contacto y poder responderte correctamente, me pasas tu numero de WhatsApp?',
-    'Podes enviarlo sin 549, por ejemplo: 388900292. Yo agrego el 549 automaticamente.'
+    'Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549 automaticamente.'
   ].join('\n');
 }
 
@@ -327,22 +327,35 @@ function normalizeAliasJid(value) {
   return `${digits}@s.whatsapp.net`;
 }
 
-function extractPhoneJidFromVerificationReply(text) {
-  const raw = String(text || '').trim();
-  if (!raw || raw.includes('@lid')) return null;
+function normalizeCanonicalPhoneJid(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw || raw.endsWith('@lid')) return null;
 
-  const digits = raw.replace(/\D/g, '');
+  const hasJid = raw.includes('@');
+  if (hasJid && !raw.endsWith('@s.whatsapp.net')) return null;
+
+  const phonePart = hasJid ? raw.split('@')[0] : raw;
+  const digits = phonePart.replace(/\D/g, '');
   if (digits.length < 9 || digits.length > 15) return null;
 
-  const phone = digits.startsWith('549') ? digits : `549${digits}`;
+  // Los JID entregados por WhatsApp ya tienen el prefijo internacional.
+  // A los numeros escritos por una persona les agregamos el prefijo argentino.
+  const phone = hasJid || digits.startsWith('549') ? digits : `549${digits}`;
   if (phone.length > 15) return null;
 
   return `${phone}@s.whatsapp.net`;
 }
 
+function extractPhoneJidFromVerificationReply(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw.includes('@lid')) return null;
+  return normalizeCanonicalPhoneJid(raw);
+}
+
 async function linkClientAlias(session, aliasJid, canonicalJid) {
   const alias = normalizeAliasJid(aliasJid);
-  const canonical = normalizeAliasJid(canonicalJid);
+  const canonical = normalizeCanonicalPhoneJid(canonicalJid);
 
   if (!alias || !canonical) {
     throw new Error('aliasJid y canonicalJid son requeridos.');
@@ -492,6 +505,40 @@ async function connectSession(clientName) {
         } else {
           await saveIncomingMessage(session, payload);
           let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+
+          if (payload.from?.endsWith('@lid')) {
+            const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
+            if (canonicalJid) {
+              const [registrationState, reservationState] = await Promise.all([
+                getBotFlowState(session.id, canonicalConversationJid, 'registration'),
+                getBotFlowState(session.id, canonicalConversationJid, 'reservation')
+              ]);
+              const shouldLink = registrationState?.step === 'ask_phone' ||
+                reservationState?.step === 'ask_phone' ||
+                await hasRecentLidVerificationRequest(session.id, payload.from);
+
+              if (shouldLink) {
+                await linkClientAlias(session, payload.from, canonicalJid);
+                if (canonicalConversationJid !== canonicalJid) {
+                  for (const [flowName, flowState] of [
+                    ['registration', registrationState],
+                    ['reservation', reservationState]
+                  ]) {
+                    if (!flowState) continue;
+                    await clearBotFlowState(session.id, canonicalConversationJid, flowName);
+                    await saveBotFlowState(session.id, canonicalJid, flowName, flowState);
+                  }
+                }
+                canonicalConversationJid = canonicalJid;
+                emitAdminEvent('conversation:update', { clientId: session.id });
+                logger.info(
+                  { clientId: session.id, clientName: session.clientName, lid: payload.from, canonicalJid },
+                  'LID relacionado automaticamente por respuesta de verificacion'
+                );
+              }
+            }
+          }
+
           const reservasApi = createReservasApi({
             baseUrl: session.businessApiUrl,
             apiKey: session.businessApiKey,
@@ -570,29 +617,6 @@ async function connectSession(clientName) {
 
           if (!handledByAdminFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
             let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
-            let migratedReservationState = null;
-
-            if (payload.from?.endsWith('@lid')) {
-              const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
-              if (
-                canonicalJid &&
-                (reservationState?.step === 'ask_phone' || await hasRecentLidVerificationRequest(session.id, payload.from))
-              ) {
-                await linkClientAlias(session, payload.from, canonicalJid);
-                if (reservationState && canonicalConversationJid !== canonicalJid) {
-                  migratedReservationState = reservationState;
-                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
-                }
-                canonicalConversationJid = canonicalJid;
-                emitAdminEvent('conversation:update', { clientId: session.id });
-                logger.info(
-                  { clientId: session.id, clientName: session.clientName, lid: payload.from, canonicalJid },
-                  'LID relacionado automaticamente por respuesta de verificacion'
-                );
-              }
-            }
-
-            reservationState = migratedReservationState || await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
             const flowResult = await handleReservationFlow({
               state: reservationState,
               text: payload.text,

@@ -519,7 +519,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'query' }),
-          replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
+          replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
         };
       }
 
@@ -538,7 +538,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'register' }),
-          replies: ['Para registrarte necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
+          replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
         };
       }
 
@@ -569,10 +569,10 @@ async function continueFlow({
         }),
         replies: [
           queryIntent
-            ? 'Para consultar tus reservas necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.'
+            ? 'Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.'
             : registerIntent || !reservationIntent
-              ? 'Para registrarte necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.'
-            : 'Para empezar la reserva necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.'
+              ? 'Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.'
+            : 'Para empezar la reserva necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.'
         ]
       };
     }
@@ -648,7 +648,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'query' }),
-        replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
+        replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
       };
     }
 
@@ -660,7 +660,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'register' }),
-        replies: ['Para registrarte necesito tu numero de WhatsApp. Podes enviarlo sin 549, por ejemplo: 388900292.']
+        replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549.']
       };
     }
 
@@ -671,7 +671,7 @@ async function continueFlow({
     if (!looksLikePhone(text)) {
       return {
         state,
-        replies: ['Pasame el numero, solo con digitos. Podes omitir el 549. Ejemplo: 388900292']
+        replies: ['Pasame solo el numero local, con digitos. Ejemplo: 3884104530. Yo agrego el 549.']
       };
     }
 

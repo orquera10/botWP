@@ -31,6 +31,7 @@ const REGISTER_TRIGGER_WORDS = [
   'alta usuario'
 ];
 const CANCEL_WORDS = ['cancelar', 'salir', 'menu', 'reiniciar'];
+const BACK_WORDS = ['volver', 'atras', '0'];
 const DEFAULT_FLOW_TIMEOUT_MINUTES = 120;
 const FLOW_TIMEOUT_MINUTES = Math.max(
   1,
@@ -102,6 +103,11 @@ function wantsCancel(text) {
   return CANCEL_WORDS.some((word) => normalized === word || normalized.includes(word));
 }
 
+function wantsBack(text) {
+  const normalized = normalizeText(text);
+  return BACK_WORDS.includes(normalized);
+}
+
 function parseDate(text) {
   const normalized = normalizeText(text);
   const now = new Date();
@@ -158,13 +164,12 @@ function parseChoice(text, items, labelKey = 'nombre') {
 
   if (numeric) {
     const number = Number(numeric[1]);
-    const byPosition = items[number - 1];
-    if (byPosition) return byPosition;
-
-    const byId = items.find((item) => Number(item.id) === number);
-    if (byId) return byId;
+    // Una respuesta numerica siempre representa la posicion mostrada al usuario,
+    // nunca el ID interno que pueda tener el elemento.
+    return items[number - 1] || null;
   }
 
+  if (normalized.length < 2) return null;
   return items.find((item) => normalizeText(item[labelKey]).includes(normalized));
 }
 
@@ -176,6 +181,7 @@ function formatCanchas(canchas) {
       const duracion = cancha.duracion_fija ? ` (${cancha.duracion_fija} hs)` : '';
       return `${index + 1}. ${cancha.nombre}${duracion} - $${precio} / ${unidad}`;
     })
+    .concat('0. Volver')
     .join('\n');
 }
 
@@ -183,7 +189,83 @@ function formatSlots(slots) {
   return slots
     .slice(0, 10)
     .map((slot, index) => `${index + 1}. ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
+    .concat('0. Volver')
     .join('\n');
+}
+
+function mainMenuMessage() {
+  return [
+    'Volvimos al menu principal.',
+    'Escribi "reservar" para hacer una reserva.',
+    'Escribi "mis reservas" para consultar tus turnos.',
+    'Escribi "registrarme" para comprobar tus datos.'
+  ].join('\n');
+}
+
+function goBack(state) {
+  const data = state.data || {};
+
+  if (['ask_phone', 'ask_register_name', 'ask_cancha'].includes(state.step)) {
+    return { state: null, replies: [mainMenuMessage()] };
+  }
+
+  if (state.step === 'ask_register_email') {
+    return {
+      state: buildState('ask_register_name', data),
+      replies: ['Volvamos al nombre. Pasame tu nombre y apellido. Para volver al menu, escribi "volver".']
+    };
+  }
+
+  if (state.step === 'ask_duracion' || (state.step === 'ask_fecha' && data.cancha?.duracion_fija)) {
+    return {
+      state: buildState('ask_cancha', data),
+      replies: [`Volvamos a elegir la cancha. Las opciones son:\n${formatCanchas(data.canchas || [])}`]
+    };
+  }
+
+  if (state.step === 'ask_fecha') {
+    return {
+      state: buildState('ask_duracion', data),
+      replies: ['Volvamos a la duracion. Las opciones son 1, 2, 3 o 4 horas. Tambien podes escribir "volver".']
+    };
+  }
+
+  if (state.step === 'ask_slot') {
+    return {
+      state: buildState('ask_fecha', data),
+      replies: ['Volvamos a la fecha. Enviamela como 2026-07-05, 05/07 o "mañana". Tambien podes escribir "volver".']
+    };
+  }
+
+  if (state.step === 'ask_terms') {
+    return {
+      state: buildState('ask_slot', data),
+      replies: [`Volvamos a elegir el horario. Las opciones son:\n${formatSlots(data.slots || [])}`]
+    };
+  }
+
+  if (state.step === 'ask_name') {
+    return {
+      state: buildState('ask_terms', data),
+      replies: [`${compactTerms(data.terminos || [])}\n\nResponde SI ACEPTO para continuar o VOLVER para cambiar el horario.`]
+    };
+  }
+
+  if (state.step === 'ask_email') {
+    return {
+      state: buildState('ask_name', data),
+      replies: ['Volvamos al nombre. ¿A nombre de quien queda la reserva? Tambien podes escribir "volver".']
+    };
+  }
+
+  if (state.step === 'ask_confirm') {
+    return {
+      state: buildState('ask_email', data),
+      replies: ['Volvamos al email. Enviame el email correcto. Tambien podes escribir "volver".']
+    };
+  }
+
+  return { state: null, replies: [mainMenuMessage()] };
 }
 
 function compactTerms(terminos) {
@@ -330,7 +412,7 @@ function startRegisterFlow({ phone, pushName, after = 'menu', intro = 'Te ayudo 
       pushName,
       after
     }),
-    replies: [`${intro}\nPasame tu nombre completo.`]
+    replies: [`${intro}\nPasame tu nombre completo. Para volver al menu, escribi "volver".`]
   };
 }
 
@@ -643,6 +725,10 @@ async function continueFlow({
 
   const data = state.data || {};
 
+  if (wantsBack(text)) {
+    return goBack(state);
+  }
+
   if (hasQueryIntent(text)) {
     const phone = data.phone || phoneFromJid(canonicalJid);
     if (!phone) {
@@ -698,7 +784,7 @@ async function continueFlow({
 
     return {
       state: buildState('ask_register_email', { ...data, nombre }),
-      replies: ['Genial. Ahora pasame tu email. Si ya existe en la base, lo usamos para asociar/actualizar tu telefono.']
+      replies: ['Genial. Ahora pasame tu email. Si ya existe en la base, lo usamos para asociar/actualizar tu telefono. Para cambiar el nombre, escribi "volver".']
     };
   }
 
@@ -716,7 +802,7 @@ async function continueFlow({
     if (!cancha) {
       return {
         state,
-        replies: [`No pude identificar la cancha. Responde con uno de estos numeros:\n${formatCanchas(data.canchas || [])}`]
+        replies: [`Esa no es una de las opciones. Las opciones son:\n${formatCanchas(data.canchas || [])}`]
       };
     }
 
@@ -724,41 +810,41 @@ async function continueFlow({
     if (cancha.duracion_fija) {
       return {
         state: buildState('ask_fecha', { ...nextData, duracion: Number(cancha.duracion_fija) }),
-        replies: ['Perfecto. Pasame la fecha de la reserva. Puede ser 2026-07-05, 05/07 o "mañana".']
+        replies: ['Perfecto. Pasame la fecha de la reserva. Puede ser 2026-07-05, 05/07 o "mañana". Para cambiar la cancha, escribi "volver".']
       };
     }
 
     return {
       state: buildState('ask_duracion', nextData),
-      replies: ['Cuantas horas queres reservar? Responde 1, 2, 3 o 4.']
+      replies: ['Cuantas horas queres reservar? Responde 1, 2, 3 o 4. Para cambiar la cancha, responde 0 o "volver".']
     };
   }
 
   if (state.step === 'ask_duracion') {
     const duracion = parseDuration(text);
     if (!duracion) {
-      return { state, replies: ['La duracion tiene que ser 1, 2, 3 o 4 horas.'] };
+      return { state, replies: ['Esa no es una de las opciones. Responde 1, 2, 3 o 4 horas. Para volver, responde 0 o "volver".'] };
     }
 
     return {
       state: buildState('ask_fecha', { ...data, duracion }),
-      replies: ['Pasame la fecha de la reserva. Puede ser 2026-07-05, 05/07 o "mañana".']
+      replies: ['Pasame la fecha de la reserva. Puede ser 2026-07-05, 05/07 o "mañana". Para cambiar la duracion, escribi "volver".']
     };
   }
 
   if (state.step === 'ask_fecha') {
     const fecha = parseDate(text);
     if (!fecha) {
-      return { state, replies: ['No pude leer la fecha. Mandamela como 2026-07-05, 05/07 o "mañana".'] };
+      return { state, replies: ['Esa fecha no es valida. Mandamela como 2026-07-05, 05/07 o "mañana". Para volver a la opcion anterior, escribi "volver".'] };
     }
 
     return askDisponibilidad({ ...data, fecha });
   }
 
   if (state.step === 'ask_slot') {
-    const slot = parseChoice(text, data.slots || [], 'label');
+    const slot = parseChoice(text, (data.slots || []).slice(0, 10), 'label');
     if (!slot) {
-      return { state, replies: [`Elegí un horario respondiendo con el numero:\n${formatSlots(data.slots || [])}`] };
+      return { state, replies: [`Esa no es una de las opciones. Los horarios disponibles son:\n${formatSlots(data.slots || [])}`] };
     }
 
     const terminos = await listarTerminos({
@@ -768,27 +854,27 @@ async function continueFlow({
 
     return {
       state: buildState('ask_terms', { ...data, slot, terminos }),
-      replies: [`${compactTerms(terminos)}\n\nPara aceptar y seguir, responde SI ACEPTO.`]
+      replies: [`${compactTerms(terminos)}\n\nPara aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.`]
     };
   }
 
   if (state.step === 'ask_terms') {
     const accepted = ['si', 'sí', 'si acepto', 'sí acepto', 'acepto'].includes(normalizeText(text));
     if (!accepted) {
-      return { state, replies: ['Necesito que respondas "SI ACEPTO" para poder generar la reserva.'] };
+      return { state, replies: ['Esa no es una opcion valida. Responde "SI ACEPTO" para continuar o "VOLVER" para cambiar el horario.'] };
     }
 
     if (!data.nombre) {
       return {
         state: buildState('ask_name', { ...data, aceptaTerminos: true }),
-        replies: ['A nombre de quien queda la reserva?']
+        replies: ['A nombre de quien queda la reserva? Para volver a los terminos, escribi "volver".']
       };
     }
 
     if (!parseEmail(data.email)) {
       return {
         state: buildState('ask_email', { ...data, aceptaTerminos: true }),
-        replies: ['Pasame un email para generar el pago de la seña.']
+        replies: ['Pasame un email para generar el pago de la seña. Para volver, escribi "volver".']
       };
     }
 
@@ -806,7 +892,7 @@ async function continueFlow({
 
     return {
       state: buildState('ask_email', { ...data, nombre }),
-      replies: ['Genial. Ahora pasame un email para generar el pago de la seña.']
+      replies: ['Genial. Ahora pasame un email para generar el pago de la seña. Para cambiar el nombre, escribi "volver".']
     };
   }
 
@@ -828,7 +914,7 @@ async function continueFlow({
     if (!accepted) {
       return {
         state,
-        replies: ['Si esta todo bien responde SI. Para empezar de nuevo responde cancelar y despues "reservar".']
+        replies: ['Esa no es una opcion valida. Responde SI para confirmar, VOLVER para corregir los datos o CANCELAR para salir.']
       };
     }
 

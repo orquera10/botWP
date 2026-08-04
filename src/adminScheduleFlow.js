@@ -1,7 +1,7 @@
 const TURNOS_TRIGGERS = ['agenda', 'turnos', 'ver turnos', 'todos los turnos', 'turnos del dia', 'turnos del día'];
 const DAILY_TRIGGERS = ['informe diario', 'informe del dia', 'informe del día', 'reporte diario', 'resumen diario', 'caja', 'caja del dia', 'caja del día', 'balance diario'];
 const MONTHLY_TRIGGERS = ['informe mensual', 'reporte mensual', 'resumen mensual', 'caja mensual', 'balance mensual'];
-const MENU_TRIGGERS = ['hola', 'menu', 'menú'];
+const MENU_TRIGGERS = ['hola', 'menu', 'menú', 'volver', 'atras', 'atrás', '0'];
 
 function normalizeText(value) {
   return String(value || '')
@@ -107,7 +107,9 @@ function adminMenu(businessName) {
     '3. Informe mensual',
     '   Escribí: informe mensual este mes',
     '',
-    'También podés escribir menú para volver a estas opciones.'
+    '0. Volver a este menú',
+    '',
+    'También podés escribir menú o volver.'
   ].join('\n');
 }
 
@@ -248,6 +250,13 @@ export async function handleAdminScheduleFlow({ state, text, reservasApi, busine
   const legacyActive = state?.step === 'ask_admin_date';
   const active = legacyActive || state?.step === 'ask_admin_period';
   const type = legacyActive ? 'turnos' : state?.reportType || detectIntent(text);
+  if (!active && !type && /^\d+$/.test(normalizeText(text))) {
+    return {
+      handled: true,
+      state: null,
+      replies: [`Esa no es una de las opciones. Las opciones son:\n\n${adminMenu(businessName)}`]
+    };
+  }
   if (!active && !type) return { handled: false, state: null, replies: [] };
 
   if (active && /\b(cancelar|salir)\b/.test(normalizeText(text))) {

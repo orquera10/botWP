@@ -59,6 +59,10 @@ function looksLikePhone(text) {
   return normalizeArgentinePhone(digits).length <= 15;
 }
 
+function phoneRequestMessage(purpose = 'continuar') {
+  return `Para ${purpose} necesito identificar tu cuenta. Toca el boton "Compartir numero de telefono". Si no aparece, enviame solo el numero local, por ejemplo: 3884104530.`;
+}
+
 function normalizeText(text) {
   return String(text || '')
     .trim()
@@ -616,7 +620,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'query' }),
-          replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
+          replies: [phoneRequestMessage('consultar tus reservas')]
         };
       }
 
@@ -635,7 +639,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'register' }),
-          replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
+          replies: [phoneRequestMessage('registrarte')]
         };
       }
 
@@ -667,10 +671,10 @@ async function continueFlow({
         }),
         replies: [
           queryIntent
-            ? 'Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.'
+            ? phoneRequestMessage('consultar tus reservas')
             : registerIntent || !reservationIntent
-              ? 'Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.'
-            : 'Para empezar la reserva necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.'
+              ? phoneRequestMessage('registrarte')
+            : phoneRequestMessage('empezar la reserva')
         ]
       };
     }
@@ -758,7 +762,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'query' }),
-        replies: ['Para consultar tus reservas necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
+        replies: [phoneRequestMessage('consultar tus reservas')]
       };
     }
 
@@ -770,7 +774,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'register' }),
-        replies: ['Para registrarte necesito tu numero de WhatsApp. Enviame solo el numero local, por ejemplo: 3884104530.']
+        replies: [phoneRequestMessage('registrarte')]
       };
     }
 
@@ -781,7 +785,7 @@ async function continueFlow({
     if (!looksLikePhone(text)) {
       return {
         state,
-        replies: ['Pasame solo el numero local, con digitos. Ejemplo: 3884104530.']
+        replies: ['No pude identificar el numero. Toca "Compartir numero de telefono" o enviame solo el numero local, por ejemplo: 3884104530.']
       };
     }
 
@@ -790,7 +794,19 @@ async function continueFlow({
     }
 
     if (data.intent === 'register') {
-      return startRegisterFlow({ phone: normalizeArgentinePhone(text), pushName: data.pushName || pushName });
+      const phone = normalizeArgentinePhone(text);
+      const identity = await identifyClient(phone);
+      if (identity.found) {
+        const cliente = identity.cliente || {};
+        const nombre = cliente.nombre || data.pushName || pushName || '';
+        const welcome = buildWelcomeMessage(businessSettings, businessName, nombre);
+        return {
+          state: null,
+          replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
+        };
+      }
+
+      return startRegisterFlow({ phone, pushName: data.pushName || pushName });
     }
 
     return startFlow({

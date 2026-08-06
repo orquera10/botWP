@@ -155,8 +155,8 @@ function isUserVisibleMessage(message) {
 function buildLidVerificationMessage(session) {
   return [
     `Hola, soy el asistente de ${session.clientName}.`,
-    'Para verificar tu contacto y poder responderte correctamente, me pasas tu numero de WhatsApp?',
-    'Enviame solo el numero local, por ejemplo: 3884104530.'
+    'Para identificar tu cuenta, toca el boton "Compartir numero de telefono".',
+    'Si el boton no aparece, enviame solo el numero local, por ejemplo: 3884104530.'
   ].join('\n');
 }
 
@@ -299,6 +299,33 @@ async function sendBotText(session, to, text) {
 
   const result = await session.sock.sendMessage(to, { text, contextInfo: {} });
   await saveOutgoingMessage(session, { to, text, result });
+  emitAdminEvent('message:new', {
+    clientId: session.id,
+    direction: 'outgoing',
+    message: {
+      clientId: session.id,
+      clientName: session.clientName,
+      id: result?.key?.id,
+      from: session.sock?.user?.id || null,
+      to,
+      text
+    }
+  });
+
+  return result;
+}
+
+async function sendPhoneNumberRequest(session, to) {
+  if (!session.sock || session.status !== 'open' || !to) return null;
+
+  const text = 'Solicitud para compartir numero de telefono';
+  const result = await session.sock.sendMessage(to, { requestPhoneNumber: true });
+  await saveOutgoingMessage(session, {
+    to,
+    text,
+    result,
+    messageType: 'phone_number_request'
+  });
   emitAdminEvent('message:new', {
     clientId: session.id,
     direction: 'outgoing',
@@ -469,6 +496,81 @@ async function connectSession(clientName) {
       }
     });
 
+    async function handlePhoneNumberShare({ lid, jid }) {
+      const aliasJid = normalizeAliasJid(lid);
+      const canonicalJid = normalizeCanonicalPhoneJid(jid);
+      if (!aliasJid?.endsWith('@lid') || !canonicalJid) {
+        throw new Error('WhatsApp no envio una relacion LID/telefono valida.');
+      }
+
+      const previousCanonicalJid = await getCanonicalConversationJid(session.id, aliasJid);
+      const [registrationState, reservationState] = await Promise.all([
+        getBotFlowState(session.id, previousCanonicalJid, 'registration'),
+        getBotFlowState(session.id, previousCanonicalJid, 'reservation')
+      ]);
+
+      await linkClientAlias(session, aliasJid, canonicalJid);
+
+      const reservasApi = createReservasApi({
+        baseUrl: session.businessApiUrl,
+        apiKey: session.businessApiKey,
+        adminAgendaAction: normalizeAdminAgendaAction(session.businessSettings.adminAgendaAction)
+      });
+      const phone = canonicalJid.split('@')[0];
+      let originFlow = 'reservation';
+      let flowResult;
+
+      if (registrationState) {
+        originFlow = 'registration';
+        flowResult = await handleRegistrationFlow({
+          state: registrationState,
+          text: phone,
+          canonicalJid,
+          pushName: '',
+          reservasApi,
+          businessName: session.businessName,
+          businessSettings: session.businessSettings
+        });
+      } else {
+        flowResult = await handleReservationFlow({
+          state: reservationState,
+          text: reservationState?.step === 'ask_phone' ? phone : 'hola',
+          canonicalJid,
+          pushName: '',
+          reservasApi,
+          businessName: session.businessName,
+          businessSettings: session.businessSettings,
+          registrationAvailable: session.businessFlows.includes('registro')
+        });
+      }
+
+      for (const conversationJid of new Set([previousCanonicalJid, canonicalJid])) {
+        await Promise.all([
+          clearBotFlowState(session.id, conversationJid, 'registration'),
+          clearBotFlowState(session.id, conversationJid, 'reservation')
+        ]);
+      }
+
+      if (flowResult.state) {
+        const nextFlow = flowResult.targetFlow === 'reservation'
+          ? 'reservation'
+          : flowResult.targetFlow === 'registration' || flowResult.state.step?.startsWith('ask_register_')
+            ? 'registration'
+            : originFlow;
+        await saveBotFlowState(session.id, canonicalJid, nextFlow, flowResult.state);
+      }
+
+      for (const reply of flowResult.replies || []) {
+        await sendBotText(session, aliasJid, reply);
+      }
+
+      emitAdminEvent('conversation:update', { clientId: session.id });
+      logger.info(
+        { clientId: session.id, clientName: session.clientName, lid: aliasJid, canonicalJid },
+        'LID relacionado mediante el boton nativo de WhatsApp'
+      );
+    }
+
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
       for (const message of messages) {
         if (!message.message) continue;
@@ -613,6 +715,13 @@ async function connectSession(clientName) {
             for (const reply of registrationResult.replies || []) {
               await sendBotText(session, payload.from, reply);
             }
+            if (
+              registrationResult.state?.step === 'ask_phone' &&
+              payload.from?.endsWith('@lid') &&
+              (!isDatabaseEnabled() || await shouldAskForLidVerification(session.id, payload.from))
+            ) {
+              await sendPhoneNumberRequest(session, payload.from);
+            }
           }
 
           if (!handledByAdminFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
@@ -646,11 +755,20 @@ async function connectSession(clientName) {
             }
 
             if (
+              flowResult.state?.step === 'ask_phone' &&
+              payload.from?.endsWith('@lid') &&
+              (!isDatabaseEnabled() || await shouldAskForLidVerification(session.id, payload.from))
+            ) {
+              await sendPhoneNumberRequest(session, payload.from);
+            }
+
+            if (
               (!flowResult.replies || flowResult.replies.length === 0) &&
               payload.from?.endsWith('@lid') &&
               await shouldAskForLidVerification(session.id, payload.from)
             ) {
               await sendBotText(session, payload.from, buildLidVerificationMessage(session));
+              await sendPhoneNumberRequest(session, payload.from);
             }
           }
           emitAdminEvent('message:new', {
@@ -701,6 +819,14 @@ async function connectSession(clientName) {
 
     socket.ev.on('contacts.upsert', handleContacts);
     socket.ev.on('contacts.update', handleContacts);
+    socket.ev.on('chats.phoneNumberShare', (share) => {
+      handlePhoneNumberShare(share).catch((error) => {
+        logger.warn(
+          { clientId: session.id, clientName: session.clientName, share, error: serializeError(error) },
+          'No se pudo procesar el numero compartido desde WhatsApp'
+        );
+      });
+    });
 
     return session;
   })()

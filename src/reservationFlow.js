@@ -30,6 +30,7 @@ const REGISTER_TRIGGER_WORDS = [
   'alta cliente',
   'alta usuario'
 ];
+const PRODUCT_TRIGGER_WORDS = ['productos', 'producto', 'catalogo', 'catálogo'];
 const CANCEL_WORDS = ['cancelar', 'salir', 'menu', 'reiniciar'];
 const BACK_WORDS = ['volver', 'atras', '0'];
 const DEFAULT_FLOW_TIMEOUT_MINUTES = 120;
@@ -76,11 +77,8 @@ function renderBusinessText(template, { businessName, name, catalogUrl = '' }) {
 function buildWelcomeMessage(businessSettings, businessName, name) {
   const template = businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.';
   const catalogUrl = String(businessSettings.catalogUrl || '').trim();
-  const welcome = renderBusinessText(template, { businessName, name, catalogUrl })
+  return renderBusinessText(template, { businessName, name, catalogUrl })
     .replace('¡Hola, !', '¡Hola!');
-
-  if (!catalogUrl || template.includes('{catalogUrl}')) return welcome;
-  return `${welcome}\n\nProductos: ${catalogUrl}`;
 }
 
 function hasReservationIntent(text) {
@@ -96,6 +94,11 @@ function hasQueryIntent(text) {
 function hasRegisterIntent(text) {
   const normalized = normalizeText(text);
   return REGISTER_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
+}
+
+function hasProductIntent(text) {
+  const normalized = normalizeText(text);
+  return PRODUCT_TRIGGER_WORDS.some((word) => normalized === normalizeText(word));
 }
 
 function wantsCancel(text) {
@@ -193,26 +196,26 @@ function formatSlots(slots) {
     .join('\n');
 }
 
-function userMenuMessage(intro = '¿En que puedo ayudarte?') {
-  return [
-    intro,
-    '',
+function userMenuMessage(_businessSettings = {}, intro = '') {
+  const menu = [
     'Escribi una de estas opciones:',
     '- "reservar" para hacer una reserva',
     '- "mis reservas" para consultar tus turnos',
-    '- "registrarme" para comprobar tus datos'
+    '- "productos" para consultar nuestro catalogo'
   ].join('\n');
+
+  return intro ? `${intro}\n\n${menu}` : menu;
 }
 
-function mainMenuMessage() {
-  return userMenuMessage('Volvimos al menu principal.');
+function mainMenuMessage(businessSettings = {}) {
+  return userMenuMessage(businessSettings, 'Volvimos al menu principal.');
 }
 
-function goBack(state) {
+function goBack(state, businessSettings = {}) {
   const data = state.data || {};
 
   if (['ask_phone', 'ask_register_name', 'ask_cancha'].includes(state.step)) {
-    return { state: null, replies: [mainMenuMessage()] };
+    return { state: null, replies: [mainMenuMessage(businessSettings)] };
   }
 
   if (state.step === 'ask_register_email') {
@@ -271,7 +274,7 @@ function goBack(state) {
     };
   }
 
-  return { state: null, replies: [mainMenuMessage()] };
+  return { state: null, replies: [mainMenuMessage(businessSettings)] };
 }
 
 function compactTerms(terminos) {
@@ -421,7 +424,7 @@ function startRegisterFlow({ phone, pushName, after = 'menu', intro = 'Te ayudo 
   };
 }
 
-async function finishRegisterFlow(data) {
+async function finishRegisterFlow(data, businessSettings = {}) {
   const emailIdentity = await identifyClientByEmail(data.email);
   const created = await crearCliente({
     nombre: data.nombre,
@@ -463,7 +466,7 @@ async function finishRegisterFlow(data) {
         : created.created
           ? 'Listo, ya quedaste registrado.'
           : 'Listo, tus datos ya estaban registrados.',
-      userMenuMessage()].join('\n\n')
+      userMenuMessage(businessSettings)].join('\n\n')
     ]
   };
 }
@@ -588,7 +591,10 @@ async function continueFlow({
   if (wantsCancel(text)) {
     return {
       state: null,
-      replies: ['Listo, cancele el flujo actual. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas". Para registrarte, escribime "registrarme".']
+      replies: [[
+        'Listo, cancele el flujo actual.',
+        userMenuMessage(businessSettings)
+      ].join('\n\n')]
     };
   }
 
@@ -597,7 +603,10 @@ async function continueFlow({
       return {
         state: null,
         replies: [
-          `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie. Para reservar, escribime "reservar". Para consultar tus reservas, escribime "mis reservas". Para registrarte, escribime "registrarme".`
+          [
+            `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie.`,
+            userMenuMessage(businessSettings)
+          ].join('\n\n')
         ]
       };
     }
@@ -647,6 +656,7 @@ async function continueFlow({
     const reservationIntent = hasReservationIntent(text);
     const queryIntent = hasQueryIntent(text);
     const registerIntent = hasRegisterIntent(text);
+    const productIntent = hasProductIntent(text);
 
     const phone = phoneFromJid(canonicalJid);
     if (!phone) {
@@ -677,7 +687,7 @@ async function continueFlow({
           state: null,
           replies: [[
             `Ya estas registrado${cliente.nombre ? ` como ${cliente.nombre}` : ''}.`,
-            userMenuMessage()
+            userMenuMessage(businessSettings)
           ].join('\n\n')]
         };
       }
@@ -713,6 +723,16 @@ async function continueFlow({
       return { state: null, replies: [[welcome, unregisteredMessage].filter(Boolean).join('\n')] };
     }
 
+    if (productIntent) {
+      const catalogUrl = String(businessSettings.catalogUrl || '').trim();
+      return {
+        state: null,
+        replies: [catalogUrl
+          ? `Podes consultar nuestro catalogo de productos aca:\n${catalogUrl}`
+          : 'El catalogo de productos no esta disponible en este momento.']
+      };
+    }
+
     const cliente = identity.cliente || {};
     const nombre = cliente.nombre || pushName || '';
     const welcome = buildWelcomeMessage(businessSettings, businessName, nombre);
@@ -721,8 +741,8 @@ async function continueFlow({
       replies: [
         [
           welcome,
-          userMenuMessage()
-        ].join('\n')
+          userMenuMessage(businessSettings)
+        ].join('\n\n')
       ]
     };
   }
@@ -730,7 +750,7 @@ async function continueFlow({
   const data = state.data || {};
 
   if (wantsBack(text)) {
-    return goBack(state);
+    return goBack(state, businessSettings);
   }
 
   if (hasQueryIntent(text)) {
@@ -798,7 +818,7 @@ async function continueFlow({
       return { state, replies: ['Ese email no parece valido. Mandame uno tipo nombre@email.com.'] };
     }
 
-    return finishRegisterFlow({ ...data, email });
+    return finishRegisterFlow({ ...data, email }, businessSettings);
   }
 
   if (state.step === 'ask_cancha') {

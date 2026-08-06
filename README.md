@@ -241,7 +241,7 @@ Si el cliente deja una reserva incompleta sin responder, el estado vence despues
 El bot:
 
 - identifica el telefono desde el JID de WhatsApp cuando viene como `@s.whatsapp.net`
-- si el mensaje viene como `@lid`, solicita el numero con el boton nativo **Compartir numero de telefono** y relaciona automaticamente el LID con el JID canonico; si el boton no esta disponible, acepta como respaldo el numero local (por ejemplo `3884104530`) y agrega `549`
+- si el mensaje viene como `@lid`, intenta usar primero el mapeo automatico de WhatsApp; cuando no esta disponible pide una sola vez el numero local (por ejemplo `3884104530`), agrega `549` y relaciona el LID con el JID canonico
 - consulta canchas, terminos, disponibilidad y turnos contra `wp_reservas_api.php`
 - pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
 - crea la reserva y devuelve el link de pago de Mercado Pago

@@ -60,7 +60,7 @@ function looksLikePhone(text) {
 }
 
 function phoneRequestMessage(purpose = 'continuar') {
-  return `Para ${purpose} necesito identificar tu cuenta. Toca el boton "Compartir numero de telefono". Si no aparece, enviame solo el numero local, por ejemplo: 3884104530.`;
+  return `Para ${purpose} necesito identificar tu cuenta. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549 automaticamente.`;
 }
 
 function normalizeText(text) {
@@ -785,7 +785,7 @@ async function continueFlow({
     if (!looksLikePhone(text)) {
       return {
         state,
-        replies: ['No pude identificar el numero. Toca "Compartir numero de telefono" o enviame solo el numero local, por ejemplo: 3884104530.']
+        replies: ['No pude identificar el numero. Enviame solo los digitos del numero local, por ejemplo: 3884104530.']
       };
     }
 

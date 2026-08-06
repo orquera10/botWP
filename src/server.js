@@ -155,8 +155,8 @@ function isUserVisibleMessage(message) {
 function buildLidVerificationMessage(session) {
   return [
     `Hola, soy el asistente de ${session.clientName}.`,
-    'Para identificar tu cuenta, toca el boton "Compartir numero de telefono".',
-    'Si el boton no aparece, enviame solo el numero local, por ejemplo: 3884104530.'
+    'Para identificar tu cuenta, enviame solo tu numero local.',
+    'Por ejemplo: 3884104530. Yo agrego el 549 automaticamente.'
   ].join('\n');
 }
 
@@ -299,33 +299,6 @@ async function sendBotText(session, to, text) {
 
   const result = await session.sock.sendMessage(to, { text, contextInfo: {} });
   await saveOutgoingMessage(session, { to, text, result });
-  emitAdminEvent('message:new', {
-    clientId: session.id,
-    direction: 'outgoing',
-    message: {
-      clientId: session.id,
-      clientName: session.clientName,
-      id: result?.key?.id,
-      from: session.sock?.user?.id || null,
-      to,
-      text
-    }
-  });
-
-  return result;
-}
-
-async function sendPhoneNumberRequest(session, to) {
-  if (!session.sock || session.status !== 'open' || !to) return null;
-
-  const text = 'Solicitud para compartir numero de telefono';
-  const result = await session.sock.sendMessage(to, { requestPhoneNumber: true });
-  await saveOutgoingMessage(session, {
-    to,
-    text,
-    result,
-    messageType: 'phone_number_request'
-  });
   emitAdminEvent('message:new', {
     clientId: session.id,
     direction: 'outgoing',
@@ -715,13 +688,6 @@ async function connectSession(clientName) {
             for (const reply of registrationResult.replies || []) {
               await sendBotText(session, payload.from, reply);
             }
-            if (
-              registrationResult.state?.step === 'ask_phone' &&
-              payload.from?.endsWith('@lid') &&
-              (!isDatabaseEnabled() || await shouldAskForLidVerification(session.id, payload.from))
-            ) {
-              await sendPhoneNumberRequest(session, payload.from);
-            }
           }
 
           if (!handledByAdminFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
@@ -755,20 +721,11 @@ async function connectSession(clientName) {
             }
 
             if (
-              flowResult.state?.step === 'ask_phone' &&
-              payload.from?.endsWith('@lid') &&
-              (!isDatabaseEnabled() || await shouldAskForLidVerification(session.id, payload.from))
-            ) {
-              await sendPhoneNumberRequest(session, payload.from);
-            }
-
-            if (
               (!flowResult.replies || flowResult.replies.length === 0) &&
               payload.from?.endsWith('@lid') &&
               await shouldAskForLidVerification(session.id, payload.from)
             ) {
               await sendBotText(session, payload.from, buildLidVerificationMessage(session));
-              await sendPhoneNumberRequest(session, payload.from);
             }
           }
           emitAdminEvent('message:new', {

@@ -1,3 +1,9 @@
+import {
+  addDaysToIso,
+  todayIsoInBusinessTimeZone,
+  validIsoDate
+} from './dateUtils.js';
+
 const TURNOS_TRIGGERS = ['agenda', 'turnos', 'ver turnos', 'todos los turnos', 'turnos del dia', 'turnos del día'];
 const DAILY_TRIGGERS = ['informe diario', 'informe del dia', 'informe del día', 'reporte diario', 'resumen diario', 'caja', 'caja del dia', 'caja del día', 'balance diario'];
 const MONTHLY_TRIGGERS = ['informe mensual', 'reporte mensual', 'resumen mensual', 'caja mensual', 'balance mensual'];
@@ -11,48 +17,27 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
-function toIsoDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function validDate(year, month, day) {
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
-  return toIsoDate(date);
-}
-
 function parseDate(text) {
   const normalized = normalizeText(text);
-  const today = new Date();
-  if (/\bhoy\b/.test(normalized)) return toIsoDate(today);
-  if (/\bayer\b/.test(normalized)) {
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return toIsoDate(yesterday);
-  }
-  if (/\bmanana\b/.test(normalized)) {
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return toIsoDate(tomorrow);
-  }
+  const today = todayIsoInBusinessTimeZone();
+  if (/\bhoy\b/.test(normalized)) return today;
+  if (/\bayer\b/.test(normalized)) return addDaysToIso(today, -1);
+  if (/\bmanana\b/.test(normalized)) return addDaysToIso(today, 1);
 
   const iso = normalized.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
-  if (iso) return validDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  if (iso) return validIsoDate(iso[1], iso[2], iso[3]);
 
   const local = normalized.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/);
   if (!local) return null;
-  const year = local[3] ? Number(local[3].length === 2 ? `20${local[3]}` : local[3]) : today.getFullYear();
-  return validDate(year, Number(local[2]), Number(local[1]));
+  const year = local[3] ? Number(local[3].length === 2 ? `20${local[3]}` : local[3]) : Number(today.slice(0, 4));
+  return validIsoDate(year, local[2], local[1]);
 }
 
 function parseMonth(text) {
   const normalized = normalizeText(text);
-  const today = new Date();
+  const today = todayIsoInBusinessTimeZone();
   if (/\b(este mes|mes actual)\b/.test(normalized)) {
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    return today.slice(0, 7);
   }
 
   const iso = normalized.match(/\b(\d{4})-(\d{1,2})\b/);
@@ -69,7 +54,7 @@ function parseMonth(text) {
   const monthIndex = months.findIndex((month) => new RegExp(`\\b${month}\\b`).test(normalized));
   if (monthIndex === -1) return null;
   const yearMatch = normalized.match(/\b(20\d{2})\b/);
-  return `${yearMatch?.[1] || today.getFullYear()}-${String(monthIndex + 1).padStart(2, '0')}`;
+  return `${yearMatch?.[1] || today.slice(0, 4)}-${String(monthIndex + 1).padStart(2, '0')}`;
 }
 
 function hasTrigger(text, triggers) {

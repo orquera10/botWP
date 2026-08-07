@@ -57,6 +57,7 @@ ADMIN_API_URL=https://mediumslateblue-pony-524766.hostingersite.com/admin_api.ph
 ADMIN_API_KEY=tu-clave-administrativa
 ADMIN_PHONES=5491112345678,5491198765432
 CATALOG_URL=https://mediumslateblue-pony-524766.hostingersite.com/catalogo.php
+BUSINESS_TIME_ZONE=America/Argentina/Buenos_Aires
 ```
 
 Los telefonos se escriben con codigo de pais, sin `+`, espacios ni guiones. Al iniciar, se guardan como administradores de `la-toxica` y, cuando la URL y la clave estan configuradas, se habilita la agenda administrativa. Tambien podes administrarlo desde el panel marcando **Agenda para administradores** al guardar el negocio La Toxica.
@@ -230,10 +231,12 @@ Configura:
 WP_RESERVAS_API_URL=https://mediumslateblue-pony-524766.hostingersite.com/wp_reservas_api.php
 WP_RESERVAS_API_KEY=
 CATALOG_URL=https://mediumslateblue-pony-524766.hostingersite.com/catalogo.php
+BUSINESS_TIME_ZONE=America/Argentina/Buenos_Aires
 RESERVATION_FLOW_TIMEOUT_MINUTES=120
 ```
 
 Cuando `CATALOG_URL` tiene un valor, el bot agrega el enlace al mensaje de bienvenida. Tambien podes usar `{catalogUrl}` en el saludo para elegir exactamente en que parte mostrarlo.
+`BUSINESS_TIME_ZONE` define la zona horaria usada para interpretar `hoy`, `manana`, `ayer` y `este mes`, independientemente de la zona horaria del servidor.
 
 Si `WP_RESERVAS_API_KEY` queda vacio, usa `API_KEY`. El flujo se activa cuando el cliente escribe algo como `reservar`, `turno`, `cancha` o `futbol`.
 Si el cliente deja una reserva incompleta sin responder, el estado vence despues de `RESERVATION_FLOW_TIMEOUT_MINUTES` minutos y el bot pide empezar de nuevo.

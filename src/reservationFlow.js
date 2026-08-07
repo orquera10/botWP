@@ -9,6 +9,11 @@ import {
   reservasApiConfigured,
   withReservasApi
 } from './wpReservasApi.js';
+import {
+  addDaysToIso,
+  todayIsoInBusinessTimeZone,
+  validIsoDate
+} from './dateUtils.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
 const QUERY_TRIGGER_WORDS = [
@@ -117,18 +122,14 @@ function wantsBack(text) {
 
 function parseDate(text) {
   const normalized = normalizeText(text);
-  const now = new Date();
+  const today = todayIsoInBusinessTimeZone();
 
-  if (normalized.includes('hoy')) return toIsoDate(now);
-  if (normalized.includes('manana')) {
-    const date = new Date(now);
-    date.setDate(date.getDate() + 1);
-    return toIsoDate(date);
-  }
+  if (normalized.includes('hoy')) return today;
+  if (normalized.includes('manana')) return addDaysToIso(today, 1);
 
   const iso = normalized.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
   if (iso) {
-    return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+    return validIsoDate(iso[1], iso[2], iso[3]);
   }
 
   const local = normalized.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/);
@@ -136,23 +137,8 @@ function parseDate(text) {
 
   const year = local[3]
     ? Number(local[3].length === 2 ? `20${local[3]}` : local[3])
-    : now.getFullYear();
-  const month = Number(local[2]);
-  const day = Number(local[1]);
-  const date = new Date(year, month - 1, day);
-
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null;
-  }
-
-  return toIsoDate(date);
-}
-
-function toIsoDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+    : Number(today.slice(0, 4));
+  return validIsoDate(year, local[2], local[1]);
 }
 
 function parseDuration(text) {

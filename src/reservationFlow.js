@@ -180,7 +180,6 @@ function formatCanchas(canchas) {
 
 function formatSlots(slots) {
   return slots
-    .slice(0, 10)
     .map((slot, index) => `${index + 1}. ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
     .concat('0. Volver')
     .join('\n');
@@ -868,7 +867,7 @@ async function continueFlow({
   }
 
   if (state.step === 'ask_slot') {
-    const slot = parseChoice(text, (data.slots || []).slice(0, 10), 'label');
+    const slot = parseChoice(text, data.slots || [], 'label');
     if (!slot) {
       return { state, replies: [`Esa no es una de las opciones. Los horarios disponibles son:\n${formatSlots(data.slots || [])}`] };
     }

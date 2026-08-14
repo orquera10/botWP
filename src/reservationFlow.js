@@ -278,14 +278,17 @@ function goBack(state, businessSettings = {}) {
     };
   }
 
-  if (['ask_phone', 'ask_register_name', 'ask_cancha'].includes(state.step)) {
-    return { state: null, replies: [mainMenuMessage(businessSettings)] };
+  if (['ask_phone', 'ask_register_email', 'ask_cancha'].includes(state.step)) {
+    return {
+      state: buildState('main_menu', { pushName: data.pushName || '' }),
+      replies: [mainMenuMessage(businessSettings)]
+    };
   }
 
-  if (state.step === 'ask_register_email') {
+  if (state.step === 'ask_register_name') {
     return {
-      state: buildState('ask_register_name', data),
-      replies: ['Volvamos al nombre. Pasame tu nombre y apellido. Para volver al menu, escribi "volver".']
+      state: buildState('ask_register_email', data),
+      replies: ['Volvamos al email. Pasame el correo que queres usar para buscar o crear tu registro. Para volver al menu, escribi "volver".']
     };
   }
 
@@ -345,7 +348,10 @@ function goBack(state, businessSettings = {}) {
     };
   }
 
-  return { state: null, replies: [mainMenuMessage(businessSettings)] };
+  return {
+    state: buildState('main_menu', { pushName: data.pushName || '' }),
+    replies: [mainMenuMessage(businessSettings)]
+  };
 }
 
 function compactTerms(terminos) {
@@ -590,18 +596,18 @@ function startRegisterFlow({
   intro = 'Te ayudo a registrarte.'
 }) {
   return {
-    state: buildState('ask_register_name', {
+    state: buildState('ask_register_email', {
       phone,
       pushName,
       after,
       reservationData
     }),
-    replies: [`${intro}\n\nPrimero, pasame tu nombre y apellido. Para volver al menu, escribi "volver".`]
+    replies: [`${intro}\n\nPrimero, pasame tu correo electronico. Voy a buscar si ya tenes un registro con ese email. Para volver al menu, escribi "volver".`]
   };
 }
 
-async function finishRegisterFlow(data, businessSettings = {}) {
-  const emailIdentity = await identifyClientByEmail(data.email);
+async function finishRegisterFlow(data, businessSettings = {}, knownEmailIdentity = null) {
+  const emailIdentity = knownEmailIdentity || await identifyClientByEmail(data.email);
   const created = await crearCliente({
     nombre: data.nombre,
     email: data.email,
@@ -686,7 +692,7 @@ async function finishRegisterFlow(data, businessSettings = {}) {
   }
 
   return {
-    state: null,
+    state: buildState('main_menu', { pushName: data.pushName || '' }),
     replies: [
       [updatedByExistingEmail
         ? 'Listo, encontre ese email y actualice/asocie tu telefono.'
@@ -830,7 +836,7 @@ async function continueFlow({
 
   if (wantsCancel(text)) {
     return {
-      state: null,
+      state: buildState('main_menu', { pushName }),
       replies: [[
         'Listo, cancele el flujo actual.',
         userMenuMessage(businessSettings)
@@ -841,7 +847,7 @@ async function continueFlow({
   if (state && isExpired(state)) {
     if (!hasReservationIntent(text) && !hasAvailabilityIntent(text) && !hasQueryIntent(text) && !hasRegisterIntent(text)) {
       return {
-        state: null,
+        state: buildState('main_menu', { pushName }),
         replies: [
           [
             `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie.`,
@@ -1072,7 +1078,7 @@ async function continueFlow({
         const nombre = cliente.nombre || data.pushName || pushName || '';
         const welcome = buildWelcomeMessage(businessSettings, businessName, nombre);
         return {
-          state: null,
+          state: buildState('main_menu', { pushName: data.pushName || pushName }),
           replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
         };
       }
@@ -1111,15 +1117,14 @@ async function continueFlow({
       return { state, replies: ['Pasame nombre y apellido, por favor.'] };
     }
 
-    const firstName = nombre.split(/\s+/)[0];
-    const emailMessage = ['reservation', 'availability_reservation', 'availability_choose_slot'].includes(data.after)
-      ? `Gracias, ${firstName}. Para terminar, pasame tu email. Lo usamos para identificar la reserva y generar el pago de la seña.`
-      : `Gracias, ${firstName}. Ahora pasame tu email para completar el registro.`;
-
-    return {
-      state: buildState('ask_register_email', { ...data, nombre }),
-      replies: [`${emailMessage} Para cambiar el nombre, escribi "volver".`]
-    };
+    const knownEmailIdentity = data.emailIdentityFound
+      ? { found: true, cliente: data.emailCliente || null }
+      : { found: false, cliente: null };
+    return finishRegisterFlow(
+      { ...data, nombre },
+      businessSettings,
+      knownEmailIdentity
+    );
   }
 
   if (state.step === 'ask_register_email') {
@@ -1128,7 +1133,28 @@ async function continueFlow({
       return { state, replies: ['Ese email no parece valido. Mandame uno tipo nombre@email.com.'] };
     }
 
-    return finishRegisterFlow({ ...data, email }, businessSettings);
+    const emailIdentity = await identifyClientByEmail(email);
+    const existingName = String(emailIdentity.cliente?.nombre || '').trim();
+
+    if (emailIdentity.found && existingName) {
+      return finishRegisterFlow(
+        { ...data, email, nombre: existingName },
+        businessSettings,
+        emailIdentity
+      );
+    }
+
+    return {
+      state: buildState('ask_register_name', {
+        ...data,
+        email,
+        emailIdentityFound: emailIdentity.found,
+        emailCliente: emailIdentity.cliente || null
+      }),
+      replies: [emailIdentity.found
+        ? 'Encontre el email, pero falta completar el nombre. Pasame tu nombre y apellido.'
+        : 'No encontre ningun cliente con ese email. Para registrarte, pasame tu nombre y apellido.']
+    };
   }
 
   if (state.step === 'ask_cancha') {

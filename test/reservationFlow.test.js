@@ -163,25 +163,27 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
     reservasApi: registrationApi
   });
   assert.equal(identified.targetFlow, 'registration');
-  assert.equal(identified.state?.step, 'ask_register_name');
+  assert.equal(identified.state?.step, 'ask_register_email');
   assert.match(identified.replies[0], /Para continuar con la reserva tenes que registrarte/i);
-  assert.match(identified.replies[0], /pasame tu nombre y apellido/i);
+  assert.match(identified.replies[0], /pasame tu correo electronico/i);
 
-  const named = await handleRegistrationFlow({
+  const emailed = await handleRegistrationFlow({
     ...baseInput,
     state: identified.state,
-    text: 'Juan Perez',
+    text: 'juan@example.com',
     reservasApi: registrationApi
   });
+  assert.equal(emailed.state?.step, 'ask_register_name');
+  assert.match(emailed.replies[0], /No encontre ningun cliente con ese email/i);
+
   const registered = await handleRegistrationFlow({
     ...baseInput,
-    state: named.state,
-    text: 'juan@example.com',
+    state: emailed.state,
+    text: 'Juan Perez',
     reservasApi: registrationApi
   });
   assert.equal(registered.targetFlow, 'reservation');
   assert.equal(registered.state?.step, 'ask_slot');
-  assert.match(named.replies[0], /Para terminar, pasame tu email/i);
 
   const selected = await handleReservationFlow({
     ...baseInput,
@@ -191,6 +193,45 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   });
   assert.equal(selected.state?.step, 'ask_terms');
   assert.equal(selected.state?.data?.slot?.inicio, '18:00');
+});
+
+test('si el telefono no existe pero el email si, asocia el telefono sin pedir nombre', async () => {
+  const existingClient = { nombre: 'Cliente Existente', email: 'cliente@example.com' };
+  const api = fakeApi({
+    consultarCliente: async ({ email }) => email
+      ? { exists: true, cliente: existingClient }
+      : { exists: false },
+    crearCliente: async ({ telefono }) => ({
+      created: false,
+      cliente: { ...existingClient, telefono }
+    })
+  });
+  const result = await handleRegistrationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_register_email',
+      data: {
+        phone: '5493884104530',
+        after: 'availability_choose_slot',
+        reservationData: {
+          canchas: [{ id: 1, nombre: 'Cancha 1' }],
+          cancha: { id: 1, nombre: 'Cancha 1' },
+          duracion: 1,
+          fecha: todayIsoInBusinessTimeZone(),
+          slots: [{ inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }]
+        }
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: 'cliente@example.com',
+    reservasApi: api
+  });
+
+  assert.equal(result.targetFlow, 'reservation');
+  assert.equal(result.state?.step, 'ask_slot');
+  assert.equal(result.state?.data?.nombre, 'Cliente Existente');
+  assert.doesNotMatch(result.replies[0], /nombre y apellido/i);
+  assert.match(result.replies[0], /asocie el telefono/i);
 });
 
 test('una opcion numerica dentro de una reserva sigue siendo una seleccion', async () => {

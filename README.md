@@ -247,6 +247,7 @@ El bot:
 - identifica el telefono desde el JID de WhatsApp cuando viene como `@s.whatsapp.net`
 - si el mensaje viene como `@lid`, intenta usar primero el mapeo automatico de WhatsApp; cuando no esta disponible pide una sola vez el numero, acepta formatos habituales como `388 410-4530`, `0388 15 410-4530` o `+54 9 388 410-4530`, y relaciona el LID con el JID canonico
 - permite consultar disponibilidad sin registrarse; despues de mostrar los horarios pregunta si el usuario quiere reservar y, si acepta, verifica el registro antes de continuar sin perder cancha, duracion, fecha ni horarios
+- cuando un telefono no esta registrado, busca primero al cliente por email; si lo encuentra asocia el telefono y continua, y si tampoco existe pide nombre y apellido para crear el cliente
 - consulta canchas, terminos, disponibilidad y turnos contra `wp_reservas_api.php`
 - pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
 - crea la reserva y devuelve el link de pago de Mercado Pago

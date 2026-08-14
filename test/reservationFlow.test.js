@@ -113,6 +113,7 @@ test('las opciones 3 y 4 activan consulta y productos desde el menu', async () =
   });
   assert.equal(queryResult.state?.step, 'ask_phone');
   assert.equal(queryResult.state?.data?.intent, 'query');
+  assert.doesNotMatch(queryResult.replies[0], /asistente virtual/i);
 
   const productResult = await handleReservationFlow({
     ...baseInput,

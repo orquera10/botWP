@@ -55,10 +55,9 @@ function phoneFromJid(jid) {
   return String(jid.split('@')[0] || '').replace(/\D/g, '');
 }
 
-function phoneRequestMessage(purpose = 'continuar', businessName = 'el negocio') {
+function phoneRequestMessage(purpose = 'continuar') {
   if (purpose === 'verificar el registro para continuar la reserva') {
     return [
-      `Hola 👋 Soy el asistente virtual de ${businessName}.`,
       'Para continuar con la reserva necesito verificar si ya estas registrado.',
       'Pasame tu numero de telefono. Podes escribirlo como 388 410-4530 o enviarlo con +54 9.'
     ].join('\n');
@@ -69,7 +68,6 @@ function phoneRequestMessage(purpose = 'continuar', businessName = 'el negocio')
       ? 'Para terminar de preparar la reserva necesito algunos datos.'
       : 'Para continuar con la reserva necesito algunos datos.';
     return [
-      `Hola 👋 Soy el asistente virtual de ${businessName}.`,
       reservationProgress,
       'Primero, pasame tu numero de telefono. Podes escribirlo como 388 410-4530 o enviarlo con +54 9.',
       'WhatsApp no me lo proporciono automaticamente. Si ya estas registrado, no voy a pedirte nuevamente los datos que tenemos.'
@@ -77,7 +75,6 @@ function phoneRequestMessage(purpose = 'continuar', businessName = 'el negocio')
   }
 
   return [
-    `Hola 👋 Soy el asistente virtual de ${businessName}.`,
     `Para ${purpose} necesito asociar un numero de contacto. WhatsApp no me lo proporciono automaticamente.`,
     'Escribilo como lo usas normalmente, por ejemplo: 388 410-4530. Tambien podes enviarlo con +54 9.'
   ].join('\n');
@@ -880,7 +877,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'query' }),
-          replies: [phoneRequestMessage('consultar tus reservas', businessName)]
+          replies: [phoneRequestMessage('consultar tus reservas')]
         };
       }
 
@@ -900,7 +897,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'register' }),
-          replies: [phoneRequestMessage('registrarte', businessName)]
+          replies: [phoneRequestMessage('registrarte')]
         };
       }
 
@@ -971,8 +968,8 @@ async function continueFlow({
         }),
         replies: [
           queryIntent
-            ? phoneRequestMessage('consultar tus reservas', businessName)
-            : phoneRequestMessage('registrarte', businessName)
+            ? phoneRequestMessage('consultar tus reservas')
+            : phoneRequestMessage('registrarte')
         ]
       };
     }
@@ -1009,7 +1006,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'query' }),
-        replies: [phoneRequestMessage('consultar tus reservas', businessName)]
+        replies: [phoneRequestMessage('consultar tus reservas')]
       };
     }
 
@@ -1021,7 +1018,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'register' }),
-        replies: [phoneRequestMessage('registrarte', businessName)]
+        replies: [phoneRequestMessage('registrarte')]
       };
     }
 
@@ -1039,7 +1036,7 @@ async function continueFlow({
             pushName,
             intent: 'availability_registration_check'
           }),
-          replies: [phoneRequestMessage('verificar el registro para continuar la reserva', businessName)]
+          replies: [phoneRequestMessage('verificar el registro para continuar la reserva')]
         };
       }
 
@@ -1230,7 +1227,7 @@ async function continueFlow({
             pushName,
             intent: 'reservation_after_availability'
           }),
-          replies: [phoneRequestMessage('completar la reserva', businessName)]
+          replies: [phoneRequestMessage('completar la reserva')]
         };
       }
 

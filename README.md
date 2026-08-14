@@ -250,6 +250,8 @@ El bot:
 - permite consultar disponibilidad sin registrarse; despues de mostrar los horarios pregunta si el usuario quiere reservar y, si acepta, verifica el registro antes de continuar sin perder cancha, duracion, fecha ni horarios
 - al iniciar una reserva permite elegir cancha, duracion, fecha y horario antes de verificar o registrar al cliente
 - cuando un telefono no esta registrado, busca primero al cliente por email; si lo encuentra asocia el telefono y continua, y si tampoco existe pide nombre y apellido para crear el cliente
+- durante el registro puede usar el `pushName` de WhatsApp como pista para buscar un posible cliente por nombre; solicita que el usuario escriba el telefono y email guardados para verificar la coincidencia sin exponerlos
+- en los saludos usa `pushName` para personas no identificadas y el nombre normalizado de la base para clientes registrados
 - al consultar `mis reservas`, si el telefono no esta vinculado guia el mismo proceso de email y registro y retoma automaticamente la consulta
 - consulta canchas, terminos, disponibilidad y turnos contra `wp_reservas_api.php`
 - envia los terminos y la instruccion para responder `SI ACEPTO` en mensajes separados para facilitar la lectura

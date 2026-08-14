@@ -88,6 +88,24 @@ function normalizeText(text) {
     .toLowerCase();
 }
 
+function normalizePersonName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('es-AR')
+    .split(' ')
+    .map((part) => part ? `${part[0].toLocaleUpperCase('es-AR')}${part.slice(1)}` : '')
+    .join(' ');
+}
+
+function normalizeClientRecord(cliente) {
+  if (!cliente) return null;
+  return {
+    ...cliente,
+    nombre: normalizePersonName(cliente.nombre)
+  };
+}
+
 function renderBusinessText(template, { businessName, name, catalogUrl = '' }) {
   return String(template || '')
     .replaceAll('{businessName}', businessName)
@@ -281,7 +299,7 @@ function goBack(state, businessSettings = {}) {
     };
   }
 
-  if (['ask_phone', 'ask_register_email', 'ask_cancha'].includes(state.step)) {
+  if (['ask_phone', 'ask_register_email', 'ask_register_match_phone', 'ask_cancha'].includes(state.step)) {
     return {
       state: buildState('main_menu', { pushName: data.pushName || '' }),
       replies: [mainMenuMessage(businessSettings)]
@@ -292,6 +310,13 @@ function goBack(state, businessSettings = {}) {
     return {
       state: buildState('ask_register_email', data),
       replies: ['Volvamos al email. Pasame el correo que queres usar para buscar o crear tu registro. Para volver al menu, escribi "volver".']
+    };
+  }
+
+  if (state.step === 'ask_register_match_email') {
+    return {
+      state: buildState('ask_register_match_phone', data),
+      replies: ['Volvamos a la verificacion. Escribi el telefono que figura en el registro o "usar email" para buscar de otra manera.']
     };
   }
 
@@ -425,7 +450,7 @@ async function identifyClient(phone) {
 
     return {
       found: true,
-      cliente: result.cliente || null,
+      cliente: normalizeClientRecord(result.cliente),
       turnos: result.turnos || []
     };
   } catch (error) {
@@ -443,12 +468,41 @@ async function identifyClientByEmail(email) {
       return { found: false, cliente: null };
     }
 
-    return { found: true, cliente: result.cliente || null };
+    return { found: true, cliente: normalizeClientRecord(result.cliente) };
   } catch (error) {
     if (error.status === 404) {
       return { found: false, cliente: null };
     }
     throw error;
+  }
+}
+
+async function identifyClientByName(nombre) {
+  const normalizedName = normalizePersonName(nombre);
+  if (!normalizedName) return { found: false, cliente: null };
+
+  try {
+    const result = await consultarCliente({ nombre: normalizedName });
+    if (!result.exists) return { found: false, cliente: null };
+    return { found: true, cliente: normalizeClientRecord(result.cliente) };
+  } catch (error) {
+    // Algunas versiones anteriores de la API no admiten busqueda por nombre.
+    if ([400, 404].includes(error.status)) return { found: false, cliente: null };
+    throw error;
+  }
+}
+
+async function greetingNameFor(canonicalJid, pushName) {
+  const phone = phoneFromJid(canonicalJid);
+  if (!phone) return pushName || '';
+
+  try {
+    const identity = await identifyClient(phone);
+    return identity.found && identity.cliente?.nombre
+      ? identity.cliente.nombre
+      : pushName || '';
+  } catch {
+    return pushName || '';
   }
 }
 
@@ -495,13 +549,13 @@ async function prepareAvailabilityReservation({
     }
 
     return {
-      ...startRegisterFlow({
+      ...(await startRegisterFlow({
         phone,
         pushName,
         after: 'availability_choose_slot',
         reservationData: data,
         intro: 'Para continuar con la reserva tenes que registrarte. Ya tengo tu numero; ahora necesito tu nombre y tu email.'
-      }),
+      })),
       targetFlow: 'registration'
     };
   }
@@ -537,13 +591,13 @@ async function continueSelectedAvailability({
     }
 
     return {
-      ...startRegisterFlow({
+      ...(await startRegisterFlow({
         phone,
         pushName,
         after: 'availability_reservation',
         reservationData: data,
         intro: 'El horario sigue disponible. Para terminar la reserva te tengo que registrar.'
-      }),
+      })),
       targetFlow: 'registration'
     };
   }
@@ -568,13 +622,35 @@ async function continueSelectedAvailability({
   };
 }
 
-function startRegisterFlow({
+async function startRegisterFlow({
   phone,
   pushName,
   after = 'menu',
   reservationData = null,
   intro = 'Te ayudo a registrarte.'
 }) {
+  const nameIdentity = pushName
+    ? await identifyClientByName(pushName)
+    : { found: false, cliente: null };
+  const candidate = nameIdentity.cliente;
+
+  if (nameIdentity.found && candidate?.telefono && candidate?.email) {
+    return {
+      state: buildState('ask_register_match_phone', {
+        phone,
+        pushName,
+        after,
+        reservationData,
+        candidate
+      }),
+      replies: [[
+        intro,
+        `Encontre un posible registro a nombre de ${candidate.nombre}.`,
+        'Para confirmar que es tuyo sin mostrar datos privados, escribi el numero de telefono que figura en ese registro. Si no es tu registro, escribi "usar email".'
+      ].join('\n\n')]
+    };
+  }
+
   return {
     state: buildState('ask_register_email', {
       phone,
@@ -589,11 +665,11 @@ function startRegisterFlow({
 async function finishRegisterFlow(data, businessSettings = {}, knownEmailIdentity = null) {
   const emailIdentity = knownEmailIdentity || await identifyClientByEmail(data.email);
   const created = await crearCliente({
-    nombre: data.nombre,
+    nombre: normalizePersonName(data.nombre),
     email: data.email,
     telefono: data.phone
   });
-  const cliente = created.cliente || emailIdentity.cliente || {};
+  const cliente = normalizeClientRecord(created.cliente || emailIdentity.cliente) || {};
   const updatedByExistingEmail = emailIdentity.found && !created.created;
 
   if (data.after === 'query') {
@@ -712,12 +788,12 @@ async function startQueryFlow({
     if (!identity.found) {
       if (registrationAvailable) {
         return {
-          ...startRegisterFlow({
+          ...(await startRegisterFlow({
             phone,
             pushName,
             after: 'query',
             intro: 'No encontre un cliente asociado a ese numero. Para consultar tus reservas primero necesito vincularlo con la base de datos.'
-          }),
+          })),
           targetFlow: 'registration'
         };
       }
@@ -925,9 +1001,10 @@ async function continueFlow({
   }
 
   if (!state) {
-    const welcome = buildWelcomeMessage(businessSettings, businessName, pushName || '');
+    const greetingName = await greetingNameFor(canonicalJid, pushName);
+    const welcome = buildWelcomeMessage(businessSettings, businessName, greetingName);
     return {
-      state: buildState('main_menu', { pushName }),
+      state: buildState('main_menu', { pushName, greetingName }),
       replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
     };
   }
@@ -961,9 +1038,10 @@ async function continueFlow({
 
     if (!reservationIntent && !queryIntent && !registerIntent) {
       if (hasGreeting(text)) {
-        const welcome = buildWelcomeMessage(businessSettings, businessName, pushName || '');
+        const greetingName = await greetingNameFor(canonicalJid, pushName);
+        const welcome = buildWelcomeMessage(businessSettings, businessName, greetingName);
         return {
-          state: buildState('main_menu', { pushName }),
+          state: buildState('main_menu', { pushName, greetingName }),
           replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
         };
       }
@@ -1136,8 +1214,52 @@ async function continueFlow({
     });
   }
 
+  if (state.step === 'ask_register_match_phone') {
+    if (normalizeText(text) === 'usar email') {
+      return {
+        state: buildState('ask_register_email', data),
+        replies: ['De acuerdo. Pasame tu correo electronico y voy a buscarlo en la base de datos.']
+      };
+    }
+
+    const suppliedPhone = normalizeArgentinePhone(text);
+    const storedPhone = normalizeArgentinePhone(data.candidate?.telefono);
+    if (!suppliedPhone || suppliedPhone !== storedPhone) {
+      return {
+        state,
+        replies: ['Ese telefono no coincide con el registro encontrado. Intentalo nuevamente o escribi "usar email" para buscar por correo.']
+      };
+    }
+
+    return {
+      state: buildState('ask_register_match_email', data),
+      replies: ['El telefono coincide. Ahora escribi el correo electronico que figura en ese registro.']
+    };
+  }
+
+  if (state.step === 'ask_register_match_email') {
+    const suppliedEmail = parseEmail(text);
+    const storedEmail = String(data.candidate?.email || '').trim().toLowerCase();
+    if (!suppliedEmail || suppliedEmail !== storedEmail) {
+      return {
+        state,
+        replies: ['Ese email no coincide con el registro encontrado. Intentalo nuevamente o escribi VOLVER para revisar el telefono.']
+      };
+    }
+
+    return finishRegisterFlow(
+      {
+        ...data,
+        nombre: data.candidate.nombre,
+        email: storedEmail
+      },
+      businessSettings,
+      { found: true, cliente: data.candidate }
+    );
+  }
+
   if (state.step === 'ask_register_name') {
-    const nombre = String(text || '').trim();
+    const nombre = normalizePersonName(text);
     if (nombre.length < 5 || !nombre.includes(' ')) {
       return { state, replies: ['Pasame nombre y apellido, por favor.'] };
     }
@@ -1295,7 +1417,7 @@ async function continueFlow({
   }
 
   if (state.step === 'ask_name') {
-    const nombre = String(text || '').trim();
+    const nombre = normalizePersonName(text);
     if (nombre.length < 2) {
       return { state, replies: ['Pasame nombre y apellido, por favor.'] };
     }
@@ -1390,7 +1512,12 @@ export async function handleReservationFlow(input) {
 }
 
 function isRegistrationState(state) {
-  return ['ask_register_name', 'ask_register_email'].includes(state?.step) ||
+  return [
+    'ask_register_name',
+    'ask_register_email',
+    'ask_register_match_phone',
+    'ask_register_match_email'
+  ].includes(state?.step) ||
     (state?.step === 'ask_phone' && state?.data?.intent === 'register');
 }
 

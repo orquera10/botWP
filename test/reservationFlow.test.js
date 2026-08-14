@@ -66,6 +66,24 @@ test('un saludo presenta al asistente y no inicia el registro', async () => {
   assert.doesNotMatch(repeatedGreeting.replies[0], /No pude identificar una opcion/i);
 });
 
+test('un cliente registrado es saludado con el nombre normalizado de la base', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    canonicalJid: '5493884104530@s.whatsapp.net',
+    pushName: 'Apodo de WhatsApp',
+    text: 'hola',
+    reservasApi: fakeApi({
+      consultarCliente: async ({ telefono }) => telefono
+        ? { exists: true, cliente: { nombre: 'jUAN péREZ', telefono } }
+        : { exists: false }
+    })
+  });
+
+  assert.equal(result.state?.step, 'main_menu');
+  assert.match(result.replies[0], /¡Hola, Juan Pérez!/);
+  assert.doesNotMatch(result.replies[0], /Apodo de WhatsApp/);
+});
+
 test('un pedido de registro en el primer contacto tambien pasa por el menu principal', async () => {
   const registrationResult = await handleRegistrationFlow({
     ...baseInput,
@@ -328,6 +346,58 @@ test('si el telefono no existe pero el email si, asocia el telefono sin pedir no
   assert.equal(result.state?.data?.nombre, 'Cliente Existente');
   assert.doesNotMatch(result.replies[0], /nombre y apellido/i);
   assert.match(result.replies[0], /asocie el telefono/i);
+});
+
+test('durante el registro usa pushName como pista y verifica telefono y email sin mostrarlos', async () => {
+  const currentPhone = '5493884104530';
+  const storedPhone = '5493884000000';
+  const storedEmail = 'joaquin@example.com';
+  const candidate = {
+    nombre: 'joaquin péREZ',
+    telefono: storedPhone,
+    email: storedEmail
+  };
+  const api = fakeApi({
+    consultarCliente: async ({ telefono, nombre }) => {
+      if (telefono === currentPhone) return { exists: false };
+      if (nombre === 'Joaquin') return { exists: true, cliente: candidate };
+      return { exists: false };
+    },
+    crearCliente: async ({ telefono }) => ({
+      created: false,
+      cliente: { ...candidate, telefono }
+    })
+  });
+
+  const foundByName = await handleReservationFlow({
+    ...baseInput,
+    state: mainMenuState(),
+    canonicalJid: `${currentPhone}@s.whatsapp.net`,
+    text: 'registrarme',
+    reservasApi: api
+  });
+  assert.equal(foundByName.targetFlow, undefined);
+  assert.equal(foundByName.state?.step, 'ask_register_match_phone');
+  assert.match(foundByName.replies[0], /posible registro a nombre de Joaquin Pérez/i);
+  assert.doesNotMatch(foundByName.replies[0], new RegExp(storedPhone));
+  assert.doesNotMatch(foundByName.replies[0], new RegExp(storedEmail));
+
+  const phoneVerified = await handleRegistrationFlow({
+    ...baseInput,
+    state: foundByName.state,
+    text: storedPhone,
+    reservasApi: api
+  });
+  assert.equal(phoneVerified.state?.step, 'ask_register_match_email');
+
+  const linked = await handleRegistrationFlow({
+    ...baseInput,
+    state: phoneVerified.state,
+    text: storedEmail,
+    reservasApi: api
+  });
+  assert.equal(linked.state?.step, 'main_menu');
+  assert.match(linked.replies[0], /asocie tu telefono/i);
 });
 
 test('una opcion numerica dentro de una reserva sigue siendo una seleccion', async () => {

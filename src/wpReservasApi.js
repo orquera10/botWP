@@ -110,8 +110,8 @@ export function createReservasApi(config = {}) {
     consultarInformeMensual({ mes }) {
       return request(resolvedConfig, 'informe_mensual', { params: { mes } });
     },
-    consultarCliente({ telefono, email }) {
-      return request(resolvedConfig, 'cliente', { params: { telefono, email } });
+    consultarCliente({ telefono, email, nombre }) {
+      return request(resolvedConfig, 'cliente', { params: { telefono, email, nombre } });
     },
     crearCliente({ nombre, email, telefono }) {
       return request(resolvedConfig, 'crear_cliente', {

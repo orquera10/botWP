@@ -258,7 +258,7 @@ El bot:
 - pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
 - crea la reserva y devuelve el link de pago de Mercado Pago
 - informa que el link de Mercado Pago permanece activo 10 minutos y que, vencido ese plazo sin pago, el turno se cancela y debe solicitarse nuevamente
-- responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno` mostrando hasta 5 reservas futuras del cliente
+- responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno`; combina turnos pasados y futuros, elimina duplicados y muestra hasta 5 reservas ordenadas desde la fecha y hora mas recientes
 - registra clientes nuevos cuando escriben `registrarme` o cuando quieren reservar con un telefono no registrado
 - si el email o nombre ya existen en la API, el endpoint `crear_cliente` puede actualizar/asociar el telefono en vez de crear un duplicado
 

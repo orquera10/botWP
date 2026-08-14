@@ -216,6 +216,46 @@ test('mis reservas guia la vinculacion por email cuando el telefono no existe', 
   assert.match(linked.replies[0], /Cancha 1/);
 });
 
+test('mis reservas combina turnos pasados y futuros y muestra primero el mas reciente', async () => {
+  const phone = '5493884104530';
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: mainMenuState(),
+    canonicalJid: `${phone}@s.whatsapp.net`,
+    text: '3',
+    reservasApi: fakeApi({
+      consultarCliente: async () => ({
+        exists: true,
+        cliente: { nombre: 'Juan Perez', telefono: phone }
+      }),
+      consultarTurnos: async ({ futuros }) => ({
+        turnos: futuros === 1
+          ? [{
+              ticket_id: 2,
+              cancha: 'Cancha Nueva',
+              fecha: '14-08-2026',
+              hora_inicio: '20:00',
+              hora_fin: '21:00',
+              estado: 'confirmada'
+            }]
+          : [{
+              ticket_id: 1,
+              cancha: 'Cancha Anterior',
+              fecha: '05-08-2026',
+              hora_inicio: '18:00',
+              hora_fin: '19:00',
+              estado: 'confirmada'
+            }]
+      })
+    })
+  });
+
+  assert.equal(result.state, null);
+  assert.match(result.replies[0], /Cancha Nueva/);
+  assert.match(result.replies[0], /Cancha Anterior/);
+  assert.ok(result.replies[0].indexOf('Cancha Nueva') < result.replies[0].indexOf('Cancha Anterior'));
+});
+
 test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reservar', async () => {
   const canchas = [{ id: 1, nombre: 'Cancha 1' }];
   const slots = [{ fecha: todayIsoInBusinessTimeZone(), inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }];

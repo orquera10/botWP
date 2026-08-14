@@ -806,11 +806,15 @@ async function startQueryFlow({
 
     const cliente = identity.cliente || {};
     const consultas = [
-      consultarTurnos({ telefono: phone, futuros: 0, limite: 100 })
+      consultarTurnos({ telefono: phone, futuros: 0, limite: 100 }),
+      consultarTurnos({ telefono: phone, futuros: 1, limite: 100 })
     ];
 
     if (cliente.email) {
-      consultas.push(consultarTurnos({ email: cliente.email, futuros: 0, limite: 100 }));
+      consultas.push(
+        consultarTurnos({ email: cliente.email, futuros: 0, limite: 100 }),
+        consultarTurnos({ email: cliente.email, futuros: 1, limite: 100 })
+      );
     }
 
     const resultados = await Promise.allSettled(consultas);

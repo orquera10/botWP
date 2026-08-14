@@ -107,6 +107,66 @@ test('las opciones 3 y 4 activan consulta y productos desde el menu', async () =
   assert.match(productResult.replies[0], /https:\/\/ejemplo\.com\/catalogo/);
 });
 
+test('mis reservas guia la vinculacion por email cuando el telefono no existe', async () => {
+  let phoneLinked = false;
+  const client = {
+    nombre: 'Cliente Existente',
+    email: 'cliente@example.com',
+    telefono: '5493884104530'
+  };
+  const api = fakeApi({
+    consultarCliente: async ({ telefono, email }) => {
+      if (email === client.email || (telefono === client.telefono && phoneLinked)) {
+        return { exists: true, cliente: client };
+      }
+      return { exists: false };
+    },
+    crearCliente: async () => {
+      phoneLinked = true;
+      return { created: false, cliente: client };
+    },
+    consultarTurnos: async () => ({
+      turnos: [{
+        ticket_id: 10,
+        cancha: 'Cancha 1',
+        fecha: todayIsoInBusinessTimeZone(),
+        hora_inicio: '18:00',
+        hora_fin: '19:00',
+        estado: 'confirmado'
+      }]
+    })
+  });
+
+  const menuChoice = await handleReservationFlow({
+    ...baseInput,
+    state: mainMenuState(),
+    text: '3',
+    reservasApi: api
+  });
+  const phoneResult = await handleReservationFlow({
+    ...baseInput,
+    state: menuChoice.state,
+    text: '+54 9 388 410-4530',
+    reservasApi: api
+  });
+
+  assert.equal(phoneResult.targetFlow, 'registration');
+  assert.equal(phoneResult.state?.step, 'ask_register_email');
+  assert.match(phoneResult.replies[0], /Para consultar tus reservas primero necesito vincularlo/i);
+
+  const linked = await handleRegistrationFlow({
+    ...baseInput,
+    state: phoneResult.state,
+    text: 'cliente@example.com',
+    reservasApi: api
+  });
+  assert.equal(phoneLinked, true);
+  assert.equal(linked.state, null);
+  assert.match(linked.replies[0], /asocie el telefono/i);
+  assert.match(linked.replies[0], /estas son tus ultimas reservas/i);
+  assert.match(linked.replies[0], /Cancha 1/);
+});
+
 test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reservar', async () => {
   const canchas = [{ id: 1, nombre: 'Cancha 1' }];
   const slots = [{ fecha: todayIsoInBusinessTimeZone(), inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }];

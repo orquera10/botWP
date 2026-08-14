@@ -616,6 +616,24 @@ async function finishRegisterFlow(data, businessSettings = {}, knownEmailIdentit
   const cliente = created.cliente || emailIdentity.cliente || {};
   const updatedByExistingEmail = emailIdentity.found && !created.created;
 
+  if (data.after === 'query') {
+    const queryResult = await startQueryFlow({
+      phone: data.phone,
+      pushName: cliente.nombre || data.nombre || data.pushName || '',
+      registrationAvailable: false
+    });
+    const linkedMessage = updatedByExistingEmail
+      ? 'Listo, encontre ese email y asocie el telefono.'
+      : created.created
+        ? 'Listo, ya quedaste registrado y vincule tus datos.'
+        : 'Listo, ya encontre y vincule tus datos.';
+
+    return {
+      state: queryResult.state || null,
+      replies: [[linkedMessage, ...(queryResult.replies || [])].join('\n\n')]
+    };
+  }
+
   if (data.after === 'availability_choose_slot') {
     const reservationData = data.reservationData || {};
     return {
@@ -704,13 +722,29 @@ async function finishRegisterFlow(data, businessSettings = {}, knownEmailIdentit
   };
 }
 
-async function startQueryFlow({ phone }) {
+async function startQueryFlow({
+  phone,
+  pushName = '',
+  registrationAvailable = true
+}) {
   try {
     const identity = await identifyClient(phone);
     if (!identity.found) {
+      if (registrationAvailable) {
+        return {
+          ...startRegisterFlow({
+            phone,
+            pushName,
+            after: 'query',
+            intro: 'No encontre un cliente asociado a ese numero. Para consultar tus reservas primero necesito vincularlo con la base de datos.'
+          }),
+          targetFlow: 'registration'
+        };
+      }
+
       return {
         state: null,
-        replies: ['No encontre un cliente registrado con ese telefono.']
+        replies: ['No encontre un cliente registrado con ese telefono o email.']
       };
     }
 
@@ -877,8 +911,9 @@ async function continueFlow({
         };
       }
 
-      const restartedQuery = await startQueryFlow({ phone });
+      const restartedQuery = await startQueryFlow({ phone, pushName, registrationAvailable });
       return {
+        targetFlow: restartedQuery.targetFlow,
         state: restartedQuery.state,
         replies: [
           `La conversacion anterior habia vencido despues de ${FLOW_TIMEOUT_MINUTES} minutos sin actividad.`,
@@ -968,7 +1003,7 @@ async function continueFlow({
     }
 
     if (queryIntent) {
-      return startQueryFlow({ phone });
+      return startQueryFlow({ phone, pushName, registrationAvailable });
     }
 
     if (registerIntent) {
@@ -1007,7 +1042,7 @@ async function continueFlow({
       };
     }
 
-    return startQueryFlow({ phone });
+    return startQueryFlow({ phone, pushName, registrationAvailable });
   }
 
   if (hasRegisterIntent(text)) {
@@ -1067,7 +1102,11 @@ async function continueFlow({
     }
 
     if (data.intent === 'query') {
-      return startQueryFlow({ phone: normalizeArgentinePhone(text) });
+      return startQueryFlow({
+        phone: normalizeArgentinePhone(text),
+        pushName: data.pushName || pushName,
+        registrationAvailable
+      });
     }
 
     if (data.intent === 'register') {

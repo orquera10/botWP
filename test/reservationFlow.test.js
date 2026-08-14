@@ -42,6 +42,7 @@ test('un saludo presenta al asistente y no inicia el registro', async () => {
   assert.equal(result.state?.step, 'main_menu');
   assert.match(result.replies[0], /asistente virtual de La Toxica/i);
   assert.match(result.replies[0], /1\. Buscar un turno/i);
+  assert.match(result.replies[0], /"cancelar" o "menu"/i);
   assert.doesNotMatch(result.replies[0], /Pasame tu nombre/i);
 
   const directIntent = await handleReservationFlow({
@@ -272,6 +273,11 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   });
   assert.equal(selected.state?.step, 'ask_terms');
   assert.equal(selected.state?.data?.slot?.inicio, '18:00');
+  assert.equal(selected.replies.length, 2);
+  assert.match(selected.replies[0], /Terminos y condiciones/i);
+  assert.doesNotMatch(selected.replies[0], /SI ACEPTO/i);
+  assert.match(selected.replies[1], /SI ACEPTO/i);
+  assert.doesNotMatch(selected.replies[1], /La seña confirma el turno/i);
 });
 
 test('si el telefono no existe pero el email si, asocia el telefono sin pedir nombre', async () => {

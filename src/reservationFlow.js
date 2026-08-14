@@ -248,7 +248,8 @@ function userMenuMessage(_businessSettings = {}, intro = '') {
     '3. Ver mis reservas',
     '4. Ver productos',
     '',
-    'Responde con el numero o escribime lo que necesitas.'
+    'Responde con el numero o escribime lo que necesitas.',
+    'En cualquier momento podes escribir "cancelar" o "menu" para volver al menu principal.'
   ].join('\n');
 
   return intro ? `${intro}\n\n${menu}` : menu;
@@ -327,7 +328,7 @@ function goBack(state, businessSettings = {}) {
   if (state.step === 'ask_name') {
     return {
       state: buildState('ask_terms', data),
-      replies: [`${compactTerms(data.terminos || [])}\n\nResponde SI ACEPTO para continuar o VOLVER para cambiar el horario.`]
+      replies: [compactTerms(data.terminos || []), termsAcceptancePrompt()]
     };
   }
 
@@ -357,6 +358,10 @@ function compactTerms(terminos) {
     'Terminos y condiciones de la reserva:',
     ...terminos.map((item) => `- ${item}`)
   ].filter(Boolean).join('\n');
+}
+
+function termsAcceptancePrompt() {
+  return 'Para aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.';
 }
 
 function formatTurnos(turnos) {
@@ -554,7 +559,7 @@ async function continueSelectedAvailability({
 
   return {
     state: buildState('ask_terms', nextData),
-    replies: [`${compactTerms(terminos)}\n\nPara aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.`]
+    replies: [compactTerms(terminos), termsAcceptancePrompt()]
   };
 }
 
@@ -643,15 +648,15 @@ async function finishRegisterFlow(data, businessSettings = {}, knownEmailIdentit
         existingClient: true,
         terminos
       }),
-      replies: [[
+      replies: [
         updatedByExistingEmail
           ? 'Listo, encontre ese email y asocie el telefono.'
           : created.created
             ? 'Listo, ya quedaste registrado.'
             : 'Listo, ya encontre tus datos.',
         compactTerms(terminos),
-        'Para aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.'
-      ].join('\n\n')]
+        termsAcceptancePrompt()
+      ]
     };
   }
 
@@ -1246,7 +1251,7 @@ async function continueFlow({
 
     return {
       state: buildState('ask_terms', { ...data, slot, terminos }),
-      replies: [`${compactTerms(terminos)}\n\nPara aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.`]
+      replies: [compactTerms(terminos), termsAcceptancePrompt()]
     };
   }
 

@@ -11,9 +11,14 @@ import {
 } from './wpReservasApi.js';
 import {
   addDaysToIso,
+  formatIsoDateForUser,
   todayIsoInBusinessTimeZone,
   validIsoDate
 } from './dateUtils.js';
+import {
+  looksLikeArgentinePhone,
+  normalizeArgentinePhone
+} from './phoneUtils.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
 const QUERY_TRIGGER_WORDS = [
@@ -44,28 +49,17 @@ const FLOW_TIMEOUT_MINUTES = Math.max(
   Number(process.env.RESERVATION_FLOW_TIMEOUT_MINUTES || DEFAULT_FLOW_TIMEOUT_MINUTES)
 );
 
-function onlyDigits(value) {
-  return String(value || '').replace(/\D/g, '');
-}
-
-function normalizeArgentinePhone(value) {
-  const digits = onlyDigits(value);
-  return digits.startsWith('549') ? digits : `549${digits}`;
-}
-
 function phoneFromJid(jid) {
   if (!jid?.endsWith('@s.whatsapp.net')) return '';
-  return onlyDigits(jid.split('@')[0]);
+  return String(jid.split('@')[0] || '').replace(/\D/g, '');
 }
 
-function looksLikePhone(text) {
-  const digits = onlyDigits(text);
-  if (digits.length < 9 || digits.length > 15) return false;
-  return normalizeArgentinePhone(digits).length <= 15;
-}
-
-function phoneRequestMessage(purpose = 'continuar') {
-  return `Para ${purpose} necesito identificar tu cuenta. Enviame solo el numero local, por ejemplo: 3884104530. Yo agrego el 549 automaticamente.`;
+function phoneRequestMessage(purpose = 'continuar', businessName = 'el negocio') {
+  return [
+    `Hola 👋 Soy el asistente virtual de ${businessName}.`,
+    `Para ${purpose} necesito asociar un numero de contacto. WhatsApp no me lo proporciono automaticamente.`,
+    'Escribilo como lo usas normalmente, por ejemplo: 388 410-4530. Tambien podes enviarlo con +54 9.'
+  ].join('\n');
 }
 
 function normalizeText(text) {
@@ -86,8 +80,15 @@ function renderBusinessText(template, { businessName, name, catalogUrl = '' }) {
 function buildWelcomeMessage(businessSettings, businessName, name) {
   const template = businessSettings.welcomeMessage || '¡Hola, {name}! Bienvenido a {businessName}.';
   const catalogUrl = String(businessSettings.catalogUrl || '').trim();
-  return renderBusinessText(template, { businessName, name, catalogUrl })
+  const welcome = renderBusinessText(template, { businessName, name, catalogUrl })
     .replace('¡Hola, !', '¡Hola!');
+  const normalized = normalizeText(welcome);
+
+  if (normalized.includes('asistente virtual') || /\bbot\b/.test(normalized)) {
+    return welcome;
+  }
+
+  return `${welcome}\nSoy el asistente virtual de ${businessName}.`;
 }
 
 function hasReservationIntent(text) {
@@ -108,6 +109,14 @@ function hasRegisterIntent(text) {
 function hasProductIntent(text) {
   const normalized = normalizeText(text);
   return PRODUCT_TRIGGER_WORDS.some((word) => normalized === normalizeText(word));
+}
+
+function parseMainMenuChoice(text) {
+  const normalized = normalizeText(text);
+  if (normalized === '1') return 'reservation';
+  if (normalized === '2') return 'query';
+  if (normalized === '3') return 'products';
+  return null;
 }
 
 function wantsCancel(text) {
@@ -139,6 +148,22 @@ function parseDate(text) {
     ? Number(local[3].length === 2 ? `20${local[3]}` : local[3])
     : Number(today.slice(0, 4));
   return validIsoDate(year, local[2], local[1]);
+}
+
+function dateInputExamples() {
+  const currentDate = formatIsoDateForUser(todayIsoInBusinessTimeZone());
+  return `${currentDate}, ${currentDate.slice(0, 5)}, "hoy" o "mañana"`;
+}
+
+function dateRequestMessage(prefix, backInstruction = '') {
+  return [
+    `${prefix} Puede ser ${dateInputExamples()}.`,
+    backInstruction
+  ].filter(Boolean).join(' ');
+}
+
+function displayDate(value) {
+  return formatIsoDateForUser(value) || String(value || '');
 }
 
 function parseDuration(text) {
@@ -187,10 +212,12 @@ function formatSlots(slots) {
 
 function userMenuMessage(_businessSettings = {}, intro = '') {
   const menu = [
-    'Escribi una de estas opciones:',
-    '- "reservar" para hacer una reserva',
-    '- "mis reservas" para consultar tus turnos',
-    '- "productos" para consultar nuestro catalogo'
+    '¿Que queres hacer?',
+    '1. Buscar un turno',
+    '2. Ver mis reservas',
+    '3. Ver productos',
+    '',
+    'Responde con el numero o escribime lo que necesitas.'
   ].join('\n');
 
   return intro ? `${intro}\n\n${menu}` : menu;
@@ -231,7 +258,7 @@ function goBack(state, businessSettings = {}) {
   if (state.step === 'ask_slot') {
     return {
       state: buildState('ask_fecha', data),
-      replies: ['Volvamos a la fecha. Enviamela como 2026-07-05, 05/07 o "mañana". Tambien podes escribir "volver".']
+      replies: [dateRequestMessage('Volvamos a la fecha.', 'Tambien podes escribir "volver".')]
     };
   }
 
@@ -551,7 +578,7 @@ async function askDisponibilidad(data) {
   if (!slots.length) {
     return {
       state: buildState('ask_fecha', data),
-      replies: ['No veo horarios disponibles para esa fecha. Pasame otra fecha, por ejemplo 2026-07-05 o 05/07.']
+      replies: [dateRequestMessage('No veo horarios disponibles para esa fecha. Pasame otra fecha.')]
     };
   }
 
@@ -605,7 +632,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'query' }),
-          replies: [phoneRequestMessage('consultar tus reservas')]
+          replies: [phoneRequestMessage('consultar tus reservas', businessName)]
         };
       }
 
@@ -624,7 +651,7 @@ async function continueFlow({
       if (!phone) {
         return {
           state: buildState('ask_phone', { pushName, intent: 'register' }),
-          replies: [phoneRequestMessage('registrarte')]
+          replies: [phoneRequestMessage('registrarte', businessName)]
         };
       }
 
@@ -642,10 +669,29 @@ async function continueFlow({
   }
 
   if (!state) {
-    const reservationIntent = hasReservationIntent(text);
-    const queryIntent = hasQueryIntent(text);
+    const menuChoice = parseMainMenuChoice(text);
+    const reservationIntent = menuChoice === 'reservation' || hasReservationIntent(text);
+    const queryIntent = menuChoice === 'query' || hasQueryIntent(text);
     const registerIntent = hasRegisterIntent(text);
-    const productIntent = hasProductIntent(text);
+    const productIntent = menuChoice === 'products' || hasProductIntent(text);
+
+    if (productIntent) {
+      const catalogUrl = String(businessSettings.catalogUrl || '').trim();
+      return {
+        state: null,
+        replies: [catalogUrl
+          ? `Podes consultar nuestro catalogo de productos aca:\n${catalogUrl}`
+          : 'El catalogo de productos no esta disponible en este momento.']
+      };
+    }
+
+    if (!reservationIntent && !queryIntent && !registerIntent) {
+      const welcome = buildWelcomeMessage(businessSettings, businessName, pushName || '');
+      return {
+        state: null,
+        replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
+      };
+    }
 
     const phone = phoneFromJid(canonicalJid);
     if (!phone) {
@@ -656,10 +702,10 @@ async function continueFlow({
         }),
         replies: [
           queryIntent
-            ? phoneRequestMessage('consultar tus reservas')
+            ? phoneRequestMessage('consultar tus reservas', businessName)
             : registerIntent || !reservationIntent
-              ? phoneRequestMessage('registrarte')
-            : phoneRequestMessage('empezar la reserva')
+              ? phoneRequestMessage('registrarte', businessName)
+            : phoneRequestMessage('empezar la reserva', businessName)
         ]
       };
     }
@@ -687,53 +733,6 @@ async function continueFlow({
     if (reservationIntent) {
       return startFlow({ phone, pushName, registrationAvailable });
     }
-
-    // Aunque sea un saludo u otro mensaje general, comprobamos si el remitente
-    // necesita registrarse. Los clientes ya registrados no reciben una respuesta
-    // automática hasta que expresen una intención de reserva o consulta.
-    const identity = await identifyClient(phone);
-    if (!identity.found) {
-      const welcome = buildWelcomeMessage(businessSettings, businessName, pushName);
-      const unregisteredMessage = renderBusinessText(
-        businessSettings.unregisteredMessage || 'No encontre tu telefono registrado. Para continuar, necesito comprobar tus datos.',
-        { businessName, name: pushName }
-      );
-      if (registrationAvailable) {
-        return {
-          ...startRegisterFlow({
-            phone,
-            pushName,
-            intro: [welcome, unregisteredMessage].filter(Boolean).join('\n')
-          }),
-          targetFlow: 'registration'
-        };
-      }
-
-      return { state: null, replies: [[welcome, unregisteredMessage].filter(Boolean).join('\n')] };
-    }
-
-    if (productIntent) {
-      const catalogUrl = String(businessSettings.catalogUrl || '').trim();
-      return {
-        state: null,
-        replies: [catalogUrl
-          ? `Podes consultar nuestro catalogo de productos aca:\n${catalogUrl}`
-          : 'El catalogo de productos no esta disponible en este momento.']
-      };
-    }
-
-    const cliente = identity.cliente || {};
-    const nombre = cliente.nombre || pushName || '';
-    const welcome = buildWelcomeMessage(businessSettings, businessName, nombre);
-    return {
-      state: null,
-      replies: [
-        [
-          welcome,
-          userMenuMessage(businessSettings)
-        ].join('\n\n')
-      ]
-    };
   }
 
   const data = state.data || {};
@@ -747,7 +746,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'query' }),
-        replies: [phoneRequestMessage('consultar tus reservas')]
+        replies: [phoneRequestMessage('consultar tus reservas', businessName)]
       };
     }
 
@@ -759,7 +758,7 @@ async function continueFlow({
     if (!phone) {
       return {
         state: buildState('ask_phone', { pushName, intent: 'register' }),
-        replies: [phoneRequestMessage('registrarte')]
+        replies: [phoneRequestMessage('registrarte', businessName)]
       };
     }
 
@@ -767,10 +766,10 @@ async function continueFlow({
   }
 
   if (state.step === 'ask_phone') {
-    if (!looksLikePhone(text)) {
+    if (!looksLikeArgentinePhone(text)) {
       return {
         state,
-        replies: ['No pude identificar el numero. Enviame solo los digitos del numero local, por ejemplo: 3884104530.']
+        replies: ['No pude identificar el numero. Podes escribirlo como 388 410-4530, 0388 15 410-4530 o +54 9 388 410-4530.']
       };
     }
 
@@ -835,7 +834,7 @@ async function continueFlow({
     if (cancha.duracion_fija) {
       return {
         state: buildState('ask_fecha', { ...nextData, duracion: Number(cancha.duracion_fija) }),
-        replies: ['Perfecto. Pasame la fecha de la reserva. Puede ser 2026-07-05, 05/07 o "mañana". Para cambiar la cancha, escribi "volver".']
+        replies: [dateRequestMessage('Perfecto. Pasame la fecha de la reserva.', 'Para cambiar la cancha, escribi "volver".')]
       };
     }
 
@@ -853,14 +852,17 @@ async function continueFlow({
 
     return {
       state: buildState('ask_fecha', { ...data, duracion }),
-      replies: ['Pasame la fecha de la reserva. Puede ser 2026-07-05, 05/07 o "mañana". Para cambiar la duracion, escribi "volver".']
+      replies: [dateRequestMessage('Pasame la fecha de la reserva.', 'Para cambiar la duracion, escribi "volver".')]
     };
   }
 
   if (state.step === 'ask_fecha') {
     const fecha = parseDate(text);
     if (!fecha) {
-      return { state, replies: ['Esa fecha no es valida. Mandamela como 2026-07-05, 05/07 o "mañana". Para volver a la opcion anterior, escribi "volver".'] };
+      return {
+        state,
+        replies: [dateRequestMessage('Esa fecha no es valida.', 'Para volver a la opcion anterior, escribi "volver".')]
+      };
     }
 
     return askDisponibilidad({ ...data, fecha });
@@ -962,7 +964,7 @@ async function continueFlow({
         [
           'Reserva creada. Queda pendiente hasta pagar la seña.',
           `Cancha: ${reserva.reserva?.cancha || data.cancha.nombre}`,
-          `Fecha: ${reserva.reserva?.fecha || data.fecha}`,
+          `Fecha: ${displayDate(reserva.reserva?.fecha || data.fecha)}`,
           `Horario: ${reserva.reserva?.hora_inicio || data.slot.inicio} a ${reserva.reserva?.hora_fin || data.slot.fin}`,
           reserva.mercadopago?.init_point ? `Link de pago: ${reserva.mercadopago.init_point}` : ''
         ].filter(Boolean).join('\n')
@@ -980,7 +982,7 @@ function summaryMessage(data) {
   return [
     'Confirmame la reserva respondiendo SI:',
     `Cancha: ${data.cancha?.nombre}`,
-    `Fecha: ${data.fecha}`,
+    `Fecha: ${displayDate(data.fecha)}`,
     `Horario: ${data.slot?.label || `${data.slot?.inicio} a ${data.slot?.fin}`}`,
     `Duracion: ${data.duracion} hs`,
     `Nombre: ${data.nombre}`,

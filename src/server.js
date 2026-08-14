@@ -37,6 +37,7 @@ import {
   upsertClient
 } from './db.js';
 import { handleRegistrationFlow, handleReservationFlow } from './reservationFlow.js';
+import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 
@@ -154,9 +155,9 @@ function isUserVisibleMessage(message) {
 
 function buildLidVerificationMessage(session) {
   return [
-    `Hola, soy el asistente de ${session.clientName}.`,
-    'Para identificar tu cuenta, enviame solo tu numero local.',
-    'Por ejemplo: 3884104530. Yo agrego el 549 automaticamente.'
+    `Hola 👋 Soy el asistente virtual de ${session.businessName || session.clientName}.`,
+    'Para identificar tu cuenta necesito asociar un numero de contacto.',
+    'Escribilo como lo usas normalmente, por ejemplo: 388 410-4530. Tambien podes enviarlo con +54 9.'
   ].join('\n');
 }
 
@@ -337,12 +338,8 @@ function normalizeCanonicalPhoneJid(value) {
 
   const phonePart = hasJid ? raw.split('@')[0] : raw;
   const digits = phonePart.replace(/\D/g, '');
-  if (digits.length < 9 || digits.length > 15) return null;
-
-  // Los JID entregados por WhatsApp ya tienen el prefijo internacional.
-  // A los numeros escritos por una persona les agregamos el prefijo argentino.
-  const phone = hasJid || digits.startsWith('549') ? digits : `549${digits}`;
-  if (phone.length > 15) return null;
+  const phone = hasJid ? digits : normalizeArgentinePhone(phonePart);
+  if (!phone || phone.length < 9 || phone.length > 15) return null;
 
   return `${phone}@s.whatsapp.net`;
 }

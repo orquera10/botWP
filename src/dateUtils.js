@@ -30,6 +30,12 @@ export function addDaysToIso(isoDate, days) {
   return formatUtcDate(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
+export function formatIsoDateForUser(isoDate) {
+  const match = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(isoDate || '');
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 export function validIsoDate(year, month, day) {
   const numericYear = Number(year);
   const numericMonth = Number(month);

@@ -445,47 +445,20 @@ async function identifyClientByEmail(email) {
   }
 }
 
-async function startFlow({ phone, pushName, registrationAvailable = true }) {
-  const identity = phone ? await identifyClient(phone) : { found: false, cliente: null, turnos: [] };
-  const cliente = identity.cliente || {};
-
-  if (phone && !identity.found) {
-    if (registrationAvailable) {
-      return {
-        ...startRegisterFlow({
-          phone,
-          pushName,
-          after: 'reservation',
-          intro: 'No encontre un registro con ese numero. Para continuar con la reserva necesito completar algunos datos.'
-        }),
-        targetFlow: 'registration'
-      };
-    }
-
-    return {
-      state: null,
-      replies: ['No encontre tu telefono registrado. El registro automatico no esta habilitado para este negocio.']
-    };
-  }
-
+async function startFlow({ phone, pushName }) {
   const canchas = await listarCanchas();
 
   const data = {
     phone,
-    nombre: cliente.nombre || pushName || '',
-    email: cliente.email || '',
-    existingClient: identity.found,
+    pushName,
+    deferRegistration: true,
     canchas
   };
-
-  const greeting = identity.found && cliente.nombre
-    ? `Hola ${cliente.nombre}. Te ayudo a reservar.`
-    : 'Te ayudo a hacer la reserva.';
 
   return {
     state: buildState('ask_cancha', data),
     replies: [
-      `${greeting}\n\nElegí la cancha respondiendo con el numero:\n${formatCanchas(canchas)}`
+      `Te ayudo a hacer la reserva.\n\nElegí la cancha respondiendo con el numero:\n${formatCanchas(canchas)}`
     ]
   };
 }
@@ -562,7 +535,7 @@ async function continueSelectedAvailability({
         pushName,
         after: 'availability_reservation',
         reservationData: data,
-        intro: 'El horario sigue disponible. No encontre un registro con ese numero, asi que necesito dos datos mas para terminar la reserva.'
+        intro: 'El horario sigue disponible. Para terminar la reserva te tengo que registrar.'
       }),
       targetFlow: 'registration'
     };
@@ -975,6 +948,10 @@ async function continueFlow({
       return startAvailabilityFlow();
     }
 
+    if (reservationIntent) {
+      return startFlow({ phone: phoneFromJid(canonicalJid), pushName });
+    }
+
     if (!reservationIntent && !queryIntent && !registerIntent) {
       return {
         state: buildState('main_menu', { pushName }),
@@ -990,14 +967,12 @@ async function continueFlow({
       return {
         state: buildState('ask_phone', {
           pushName,
-          intent: queryIntent ? 'query' : registerIntent || !reservationIntent ? 'register' : 'reservation'
+          intent: queryIntent ? 'query' : 'register'
         }),
         replies: [
           queryIntent
             ? phoneRequestMessage('consultar tus reservas', businessName)
-            : registerIntent || !reservationIntent
-              ? phoneRequestMessage('registrarte', businessName)
-            : phoneRequestMessage('empezar la reserva', businessName)
+            : phoneRequestMessage('registrarte', businessName)
         ]
       };
     }
@@ -1020,10 +995,6 @@ async function continueFlow({
       }
 
       return startRegisterFlow({ phone, pushName });
-    }
-
-    if (reservationIntent) {
-      return startFlow({ phone, pushName, registrationAvailable });
     }
   }
 
@@ -1249,7 +1220,7 @@ async function continueFlow({
       return { state, replies: [`Esa no es una de las opciones. Los horarios disponibles son:\n${formatSlots(data.slots || [])}`] };
     }
 
-    if (data.availabilityOnly) {
+    if (data.availabilityOnly || data.deferRegistration) {
       const selectedData = { ...data, slot };
       const phone = data.phone || phoneFromJid(canonicalJid);
       if (!phone) {
@@ -1363,7 +1334,10 @@ async function continueFlow({
           `Cancha: ${reserva.reserva?.cancha || data.cancha.nombre}`,
           `Fecha: ${displayDate(reserva.reserva?.fecha || data.fecha)}`,
           `Horario: ${reserva.reserva?.hora_inicio || data.slot.inicio} a ${reserva.reserva?.hora_fin || data.slot.fin}`,
-          reserva.mercadopago?.init_point ? `Link de pago: ${reserva.mercadopago.init_point}` : ''
+          reserva.mercadopago?.init_point ? `Link de pago: ${reserva.mercadopago.init_point}` : '',
+          reserva.mercadopago?.init_point
+            ? 'Importante: el link de Mercado Pago permanecera activo durante 10 minutos. Si no realizas el pago dentro de ese plazo, el turno se cancelara automaticamente y tendras que solicitarlo nuevamente.'
+            : ''
         ].filter(Boolean).join('\n')
       ]
     };

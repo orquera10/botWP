@@ -71,19 +71,37 @@ test('un pedido de registro en el primer contacto tambien pasa por el menu princ
   assert.match(menuResult.replies[0], /asistente virtual/i);
 });
 
-test('la opcion 1 inicia la reserva y explica el pedido de telefono para un LID', async () => {
-  const result = await handleReservationFlow({
+test('la opcion 1 posterga el registro hasta despues de elegir el horario', async () => {
+  const slots = [{
+    fecha: todayIsoInBusinessTimeZone(),
+    inicio: '18:00',
+    fin: '19:00',
+    label: '18:00 a 19:00'
+  }];
+  const api = fakeApi({
+    listarCanchas: async () => [{ id: 1, nombre: 'Cancha 1' }],
+    consultarDisponibilidad: async () => slots
+  });
+  const started = await handleReservationFlow({
     ...baseInput,
     state: mainMenuState(),
     text: '1',
-    reservasApi: fakeApi()
+    reservasApi: api
   });
+  assert.equal(started.state?.step, 'ask_cancha');
+  assert.doesNotMatch(started.replies[0], /numero de telefono/i);
 
-  assert.equal(result.state?.step, 'ask_phone');
-  assert.equal(result.state?.data?.intent, 'reservation');
-  assert.match(result.replies[0], /asistente virtual de La Toxica/i);
-  assert.match(result.replies[0], /Para continuar con la reserva necesito algunos datos/i);
-  assert.match(result.replies[0], /WhatsApp no me lo proporciono automaticamente/i);
+  const court = await handleReservationFlow({ ...baseInput, state: started.state, text: '1', reservasApi: api });
+  const duration = await handleReservationFlow({ ...baseInput, state: court.state, text: '1', reservasApi: api });
+  const date = await handleReservationFlow({ ...baseInput, state: duration.state, text: 'hoy', reservasApi: api });
+  assert.equal(date.state?.step, 'ask_slot');
+  assert.doesNotMatch(date.replies[0], /registr/i);
+
+  const selected = await handleReservationFlow({ ...baseInput, state: date.state, text: '1', reservasApi: api });
+  assert.equal(selected.state?.step, 'ask_phone');
+  assert.equal(selected.state?.data?.intent, 'reservation_after_availability');
+  assert.equal(selected.state?.data?.slot?.inicio, '18:00');
+  assert.match(selected.replies[0], /Para terminar de preparar la reserva necesito algunos datos/i);
 });
 
 test('las opciones 3 y 4 activan consulta y productos desde el menu', async () => {
@@ -370,4 +388,46 @@ test('acepta dd/mm/aaaa, dd/mm, hoy y mañana', async (t) => {
       assert.equal(result.state?.step, 'ask_slot');
     });
   }
+});
+
+test('advierte que el link de Mercado Pago vence a los 10 minutos', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_confirm',
+      data: {
+        phone: '5493884104530',
+        nombre: 'Juan Perez',
+        email: 'juan@example.com',
+        cancha: { id: 1, nombre: 'Cancha 1' },
+        fecha: todayIsoInBusinessTimeZone(),
+        duracion: 1,
+        slot: {
+          fecha: todayIsoInBusinessTimeZone(),
+          inicio: '18:00',
+          fin: '19:00',
+          label: '18:00 a 19:00'
+        }
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: 'si',
+    canonicalJid: '5493884104530@s.whatsapp.net',
+    reservasApi: fakeApi({
+      crearReserva: async () => ({
+        reserva: {
+          cancha: 'Cancha 1',
+          fecha: todayIsoInBusinessTimeZone(),
+          hora_inicio: '18:00',
+          hora_fin: '19:00'
+        },
+        mercadopago: { init_point: 'https://mercadopago.example/pagar' }
+      })
+    })
+  });
+
+  assert.equal(result.state, null);
+  assert.match(result.replies[0], /permanecera activo durante 10 minutos/i);
+  assert.match(result.replies[0], /turno se cancelara automaticamente/i);
+  assert.match(result.replies[0], /tendras que solicitarlo nuevamente/i);
 });

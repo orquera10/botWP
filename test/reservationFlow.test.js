@@ -24,6 +24,14 @@ const baseInput = {
   registrationAvailable: true
 };
 
+function mainMenuState() {
+  return {
+    step: 'main_menu',
+    data: { pushName: baseInput.pushName },
+    updatedAt: new Date().toISOString()
+  };
+}
+
 test('un saludo presenta al asistente y no inicia el registro', async () => {
   const result = await handleReservationFlow({
     ...baseInput,
@@ -31,15 +39,42 @@ test('un saludo presenta al asistente y no inicia el registro', async () => {
     reservasApi: fakeApi()
   });
 
-  assert.equal(result.state, null);
+  assert.equal(result.state?.step, 'main_menu');
   assert.match(result.replies[0], /asistente virtual de La Toxica/i);
   assert.match(result.replies[0], /1\. Buscar un turno/i);
   assert.doesNotMatch(result.replies[0], /Pasame tu nombre/i);
+
+  const directIntent = await handleReservationFlow({
+    ...baseInput,
+    text: 'quiero saber si hay turno disponible',
+    reservasApi: fakeApi()
+  });
+  assert.equal(directIntent.state?.step, 'main_menu');
+  assert.match(directIntent.replies[0], /asistente virtual de La Toxica/i);
+  assert.doesNotMatch(directIntent.replies[0], /numero de telefono/i);
+});
+
+test('un pedido de registro en el primer contacto tambien pasa por el menu principal', async () => {
+  const registrationResult = await handleRegistrationFlow({
+    ...baseInput,
+    text: 'quiero registrarme',
+    reservasApi: fakeApi()
+  });
+  assert.equal(registrationResult.handled, false);
+
+  const menuResult = await handleReservationFlow({
+    ...baseInput,
+    text: 'quiero registrarme',
+    reservasApi: fakeApi()
+  });
+  assert.equal(menuResult.state?.step, 'main_menu');
+  assert.match(menuResult.replies[0], /asistente virtual/i);
 });
 
 test('la opcion 1 inicia la reserva y explica el pedido de telefono para un LID', async () => {
   const result = await handleReservationFlow({
     ...baseInput,
+    state: mainMenuState(),
     text: '1',
     reservasApi: fakeApi()
   });
@@ -54,6 +89,7 @@ test('la opcion 1 inicia la reserva y explica el pedido de telefono para un LID'
 test('las opciones 3 y 4 activan consulta y productos desde el menu', async () => {
   const queryResult = await handleReservationFlow({
     ...baseInput,
+    state: mainMenuState(),
     text: '3',
     reservasApi: fakeApi()
   });
@@ -62,11 +98,12 @@ test('las opciones 3 y 4 activan consulta y productos desde el menu', async () =
 
   const productResult = await handleReservationFlow({
     ...baseInput,
+    state: mainMenuState(),
     text: '4',
     businessSettings: { catalogUrl: 'https://ejemplo.com/catalogo' },
     reservasApi: fakeApi()
   });
-  assert.equal(productResult.state, null);
+  assert.equal(productResult.state?.step, 'main_menu');
   assert.match(productResult.replies[0], /https:\/\/ejemplo\.com\/catalogo/);
 });
 
@@ -78,7 +115,12 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
     consultarDisponibilidad: async () => slots
   });
 
-  const started = await handleReservationFlow({ ...baseInput, text: '2', reservasApi: api });
+  const started = await handleReservationFlow({
+    ...baseInput,
+    state: mainMenuState(),
+    text: '2',
+    reservasApi: api
+  });
   assert.equal(started.state?.step, 'ask_cancha');
   assert.equal(started.state?.data?.availabilityOnly, true);
 
@@ -101,19 +143,10 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
     text: '1',
     reservasApi: api
   });
-  assert.equal(accepted.state?.step, 'ask_slot');
-
-  const selected = await handleReservationFlow({
-    ...baseInput,
-    state: accepted.state,
-    text: '1',
-    reservasApi: api
-  });
-  assert.equal(selected.state?.step, 'ask_phone');
-  assert.equal(selected.state?.data?.intent, 'reservation_after_availability');
-  assert.equal(selected.state?.data?.slot?.inicio, '18:00');
-  assert.match(selected.replies[0], /Para terminar de preparar la reserva necesito algunos datos/i);
-  assert.match(selected.replies[0], /Primero, pasame tu numero de telefono/i);
+  assert.equal(accepted.state?.step, 'ask_phone');
+  assert.equal(accepted.state?.data?.intent, 'availability_registration_check');
+  assert.match(accepted.replies[0], /verificar si ya estas registrado/i);
+  assert.match(accepted.replies[0], /Pasame tu numero de telefono/i);
 
   const registrationApi = fakeApi({
     consultarCliente: async () => ({ exists: false }),
@@ -125,13 +158,13 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   });
   const identified = await handleReservationFlow({
     ...baseInput,
-    state: selected.state,
+    state: accepted.state,
     text: '+54 9 388 410-4530',
     reservasApi: registrationApi
   });
   assert.equal(identified.targetFlow, 'registration');
   assert.equal(identified.state?.step, 'ask_register_name');
-  assert.match(identified.replies[0], /necesito dos datos mas para terminar la reserva/i);
+  assert.match(identified.replies[0], /Para continuar con la reserva tenes que registrarte/i);
   assert.match(identified.replies[0], /pasame tu nombre y apellido/i);
 
   const named = await handleRegistrationFlow({
@@ -147,9 +180,17 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
     reservasApi: registrationApi
   });
   assert.equal(registered.targetFlow, 'reservation');
-  assert.equal(registered.state?.step, 'ask_terms');
-  assert.equal(registered.state?.data?.slot?.inicio, '18:00');
+  assert.equal(registered.state?.step, 'ask_slot');
   assert.match(named.replies[0], /Para terminar, pasame tu email/i);
+
+  const selected = await handleReservationFlow({
+    ...baseInput,
+    state: registered.state,
+    text: '1',
+    reservasApi: registrationApi
+  });
+  assert.equal(selected.state?.step, 'ask_terms');
+  assert.equal(selected.state?.data?.slot?.inicio, '18:00');
 });
 
 test('una opcion numerica dentro de una reserva sigue siendo una seleccion', async () => {

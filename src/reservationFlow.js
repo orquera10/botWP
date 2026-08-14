@@ -56,6 +56,14 @@ function phoneFromJid(jid) {
 }
 
 function phoneRequestMessage(purpose = 'continuar', businessName = 'el negocio') {
+  if (purpose === 'verificar el registro para continuar la reserva') {
+    return [
+      `Hola 👋 Soy el asistente virtual de ${businessName}.`,
+      'Para continuar con la reserva necesito verificar si ya estas registrado.',
+      'Pasame tu numero de telefono. Podes escribirlo como 388 410-4530 o enviarlo con +54 9.'
+    ].join('\n');
+  }
+
   if (['empezar la reserva', 'completar la reserva'].includes(purpose)) {
     const reservationProgress = purpose === 'completar la reserva'
       ? 'Para terminar de preparar la reserva necesito algunos datos.'
@@ -260,6 +268,13 @@ function goBack(state, businessSettings = {}) {
     return {
       state: buildState('ask_slot', data),
       replies: [`Volvamos a elegir el horario. Las opciones son:\n${formatSlots(data.slots || [])}`]
+    };
+  }
+
+  if (state.step === 'ask_phone' && data.intent === 'availability_registration_check') {
+    return {
+      state: buildState('ask_availability_reserve', data),
+      replies: ['Volvamos a la disponibilidad. Responde 1 para reservar uno de los horarios o 2 para volver al menu.']
     };
   }
 
@@ -477,6 +492,48 @@ async function startAvailabilityFlow() {
   };
 }
 
+async function prepareAvailabilityReservation({
+  data,
+  phone,
+  pushName,
+  registrationAvailable = true
+}) {
+  const identity = await identifyClient(phone);
+
+  if (!identity.found) {
+    if (!registrationAvailable) {
+      return {
+        state: null,
+        replies: ['Para continuar con la reserva tenes que registrarte, pero el registro automatico no esta habilitado para este negocio.']
+      };
+    }
+
+    return {
+      ...startRegisterFlow({
+        phone,
+        pushName,
+        after: 'availability_choose_slot',
+        reservationData: data,
+        intro: 'Para continuar con la reserva tenes que registrarte. Ya tengo tu numero; ahora necesito tu nombre y tu email.'
+      }),
+      targetFlow: 'registration'
+    };
+  }
+
+  const cliente = identity.cliente || {};
+  return {
+    state: buildState('ask_slot', {
+      ...data,
+      availabilityOnly: false,
+      phone,
+      nombre: cliente.nombre || pushName || '',
+      email: cliente.email || '',
+      existingClient: true
+    }),
+    replies: [`Perfecto. Ya encontre tus datos. Elegi el horario que queres reservar:\n${formatSlots(data.slots || [])}`]
+  };
+}
+
 async function continueSelectedAvailability({
   data,
   phone,
@@ -552,6 +609,29 @@ async function finishRegisterFlow(data, businessSettings = {}) {
   });
   const cliente = created.cliente || emailIdentity.cliente || {};
   const updatedByExistingEmail = emailIdentity.found && !created.created;
+
+  if (data.after === 'availability_choose_slot') {
+    const reservationData = data.reservationData || {};
+    return {
+      targetFlow: 'reservation',
+      state: buildState('ask_slot', {
+        ...reservationData,
+        availabilityOnly: false,
+        phone: data.phone,
+        nombre: cliente.nombre || data.nombre,
+        email: cliente.email || data.email,
+        existingClient: true
+      }),
+      replies: [[
+        updatedByExistingEmail
+          ? 'Listo, encontre ese email y asocie el telefono.'
+          : created.created
+            ? 'Listo, ya quedaste registrado.'
+            : 'Listo, ya encontre tus datos.',
+        `Ahora elegi el horario que queres reservar:\n${formatSlots(reservationData.slots || [])}`
+      ].join('\n\n')]
+    };
+  }
 
   if (data.after === 'availability_reservation') {
     const reservationData = data.reservationData || {};
@@ -824,6 +904,14 @@ async function continueFlow({
   }
 
   if (!state) {
+    const welcome = buildWelcomeMessage(businessSettings, businessName, pushName || '');
+    return {
+      state: buildState('main_menu', { pushName }),
+      replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
+    };
+  }
+
+  if (state.step === 'main_menu') {
     const menuChoice = parseMainMenuChoice(text);
     const availabilityIntent = menuChoice === 'availability' || hasAvailabilityIntent(text);
     const reservationIntent = !availabilityIntent && (menuChoice === 'reservation' || hasReservationIntent(text));
@@ -834,10 +922,11 @@ async function continueFlow({
     if (productIntent) {
       const catalogUrl = String(businessSettings.catalogUrl || '').trim();
       return {
-        state: null,
-        replies: [catalogUrl
+        state: buildState('main_menu', { pushName }),
+        replies: [[catalogUrl
           ? `Podes consultar nuestro catalogo de productos aca:\n${catalogUrl}`
-          : 'El catalogo de productos no esta disponible en este momento.']
+          : 'El catalogo de productos no esta disponible en este momento.',
+        userMenuMessage(businessSettings)].join('\n\n')]
       };
     }
 
@@ -846,10 +935,12 @@ async function continueFlow({
     }
 
     if (!reservationIntent && !queryIntent && !registerIntent) {
-      const welcome = buildWelcomeMessage(businessSettings, businessName, pushName || '');
       return {
-        state: null,
-        replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
+        state: buildState('main_menu', { pushName }),
+        replies: [[
+          'No pude identificar una opcion.',
+          userMenuMessage(businessSettings)
+        ].join('\n\n')]
       };
     }
 
@@ -879,7 +970,7 @@ async function continueFlow({
       if (identity.found) {
         const cliente = identity.cliente || {};
         return {
-          state: null,
+          state: buildState('main_menu', { pushName }),
           replies: [[
             `Ya estas registrado${cliente.nombre ? ` como ${cliente.nombre}` : ''}.`,
             userMenuMessage(businessSettings)
@@ -928,15 +1019,29 @@ async function continueFlow({
   if (state.step === 'ask_availability_reserve') {
     const answer = normalizeText(text);
     if (['1', 'si', 'reservar', 'si reservar'].includes(answer)) {
-      return {
-        state: buildState('ask_slot', data),
-        replies: [`Perfecto. Elegi el horario que queres reservar:\n${formatSlots(data.slots || [])}`]
-      };
+      const phone = data.phone || phoneFromJid(canonicalJid);
+      if (!phone) {
+        return {
+          state: buildState('ask_phone', {
+            ...data,
+            pushName,
+            intent: 'availability_registration_check'
+          }),
+          replies: [phoneRequestMessage('verificar el registro para continuar la reserva', businessName)]
+        };
+      }
+
+      return prepareAvailabilityReservation({
+        data,
+        phone,
+        pushName,
+        registrationAvailable
+      });
     }
 
     if (['2', 'no'].includes(answer)) {
       return {
-        state: null,
+        state: buildState('main_menu', { pushName }),
         replies: [mainMenuMessage(businessSettings)]
       };
     }
@@ -984,6 +1089,15 @@ async function continueFlow({
       });
     }
 
+    if (data.intent === 'availability_registration_check') {
+      return prepareAvailabilityReservation({
+        data: { ...data, phone: normalizeArgentinePhone(text) },
+        phone: normalizeArgentinePhone(text),
+        pushName: data.pushName || pushName,
+        registrationAvailable
+      });
+    }
+
     return startFlow({
       phone: normalizeArgentinePhone(text),
       pushName: data.pushName || pushName,
@@ -998,7 +1112,7 @@ async function continueFlow({
     }
 
     const firstName = nombre.split(/\s+/)[0];
-    const emailMessage = ['reservation', 'availability_reservation'].includes(data.after)
+    const emailMessage = ['reservation', 'availability_reservation', 'availability_choose_slot'].includes(data.after)
       ? `Gracias, ${firstName}. Para terminar, pasame tu email. Lo usamos para identificar la reserva y generar el pago de la seña.`
       : `Gracias, ${firstName}. Ahora pasame tu email para completar el registro.`;
 
@@ -1209,10 +1323,6 @@ function summaryMessage(data) {
 }
 
 export async function handleReservationFlow(input) {
-  if (!input.state && hasRegisterIntent(input.text)) {
-    return { state: null, replies: [] };
-  }
-
   try {
     return await withReservasApi(input.reservasApi, () => continueFlow(input));
   } catch (error) {
@@ -1231,7 +1341,9 @@ function isRegistrationState(state) {
 }
 
 export async function handleRegistrationFlow(input) {
-  if (!isRegistrationState(input.state) && !hasRegisterIntent(input.text)) {
+  // El primer contacto siempre lo presenta el flujo principal. El modulo de
+  // registro toma el control recien cuando ya existe un estado de registro.
+  if (!input.state || (!isRegistrationState(input.state) && !hasRegisterIntent(input.text))) {
     return { handled: false, state: input.state || null, replies: [] };
   }
 

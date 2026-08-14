@@ -47,6 +47,7 @@ test('la opcion 1 inicia la reserva y explica el pedido de telefono para un LID'
   assert.equal(result.state?.step, 'ask_phone');
   assert.equal(result.state?.data?.intent, 'reservation');
   assert.match(result.replies[0], /asistente virtual de La Toxica/i);
+  assert.match(result.replies[0], /Para continuar con la reserva necesito algunos datos/i);
   assert.match(result.replies[0], /WhatsApp no me lo proporciono automaticamente/i);
 });
 
@@ -111,6 +112,8 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   assert.equal(selected.state?.step, 'ask_phone');
   assert.equal(selected.state?.data?.intent, 'reservation_after_availability');
   assert.equal(selected.state?.data?.slot?.inicio, '18:00');
+  assert.match(selected.replies[0], /Para terminar de preparar la reserva necesito algunos datos/i);
+  assert.match(selected.replies[0], /Primero, pasame tu numero de telefono/i);
 
   const registrationApi = fakeApi({
     consultarCliente: async () => ({ exists: false }),
@@ -128,6 +131,8 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   });
   assert.equal(identified.targetFlow, 'registration');
   assert.equal(identified.state?.step, 'ask_register_name');
+  assert.match(identified.replies[0], /necesito dos datos mas para terminar la reserva/i);
+  assert.match(identified.replies[0], /pasame tu nombre y apellido/i);
 
   const named = await handleRegistrationFlow({
     ...baseInput,
@@ -144,6 +149,7 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   assert.equal(registered.targetFlow, 'reservation');
   assert.equal(registered.state?.step, 'ask_terms');
   assert.equal(registered.state?.data?.slot?.inicio, '18:00');
+  assert.match(named.replies[0], /Para terminar, pasame tu email/i);
 });
 
 test('una opcion numerica dentro de una reserva sigue siendo una seleccion', async () => {

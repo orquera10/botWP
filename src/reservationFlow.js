@@ -56,6 +56,18 @@ function phoneFromJid(jid) {
 }
 
 function phoneRequestMessage(purpose = 'continuar', businessName = 'el negocio') {
+  if (['empezar la reserva', 'completar la reserva'].includes(purpose)) {
+    const reservationProgress = purpose === 'completar la reserva'
+      ? 'Para terminar de preparar la reserva necesito algunos datos.'
+      : 'Para continuar con la reserva necesito algunos datos.';
+    return [
+      `Hola 👋 Soy el asistente virtual de ${businessName}.`,
+      reservationProgress,
+      'Primero, pasame tu numero de telefono. Podes escribirlo como 388 410-4530 o enviarlo con +54 9.',
+      'WhatsApp no me lo proporciono automaticamente. Si ya estas registrado, no voy a pedirte nuevamente los datos que tenemos.'
+    ].join('\n');
+  }
+
   return [
     `Hola 👋 Soy el asistente virtual de ${businessName}.`,
     `Para ${purpose} necesito asociar un numero de contacto. WhatsApp no me lo proporciono automaticamente.`,
@@ -423,7 +435,7 @@ async function startFlow({ phone, pushName, registrationAvailable = true }) {
           phone,
           pushName,
           after: 'reservation',
-          intro: 'No encontre tu telefono registrado. Para poder reservar, primero necesito comprobar tus datos.'
+          intro: 'No encontre un registro con ese numero. Para continuar con la reserva necesito completar algunos datos.'
         }),
         targetFlow: 'registration'
       };
@@ -487,7 +499,7 @@ async function continueSelectedAvailability({
         pushName,
         after: 'availability_reservation',
         reservationData: data,
-        intro: 'El horario sigue disponible. Para completar la reserva necesito registrar tus datos.'
+        intro: 'El horario sigue disponible. No encontre un registro con ese numero, asi que necesito dos datos mas para terminar la reserva.'
       }),
       targetFlow: 'registration'
     };
@@ -527,7 +539,7 @@ function startRegisterFlow({
       after,
       reservationData
     }),
-    replies: [`${intro}\nPasame tu nombre completo. Para volver al menu, escribi "volver".`]
+    replies: [`${intro}\n\nPrimero, pasame tu nombre y apellido. Para volver al menu, escribi "volver".`]
   };
 }
 
@@ -985,9 +997,14 @@ async function continueFlow({
       return { state, replies: ['Pasame nombre y apellido, por favor.'] };
     }
 
+    const firstName = nombre.split(/\s+/)[0];
+    const emailMessage = ['reservation', 'availability_reservation'].includes(data.after)
+      ? `Gracias, ${firstName}. Para terminar, pasame tu email. Lo usamos para identificar la reserva y generar el pago de la seña.`
+      : `Gracias, ${firstName}. Ahora pasame tu email para completar el registro.`;
+
     return {
       state: buildState('ask_register_email', { ...data, nombre }),
-      replies: ['Genial. Ahora pasame tu email. Si ya existe en la base, lo usamos para asociar/actualizar tu telefono. Para cambiar el nombre, escribi "volver".']
+      replies: [`${emailMessage} Para cambiar el nombre, escribi "volver".`]
     };
   }
 

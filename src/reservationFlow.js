@@ -129,6 +129,11 @@ function hasProductIntent(text) {
   return PRODUCT_TRIGGER_WORDS.some((word) => normalized === normalizeText(word));
 }
 
+function hasGreeting(text) {
+  const normalized = normalizeText(text);
+  return /^(hola|buen dia|buenas|buenas tardes|buenas noches)\b/.test(normalized);
+}
+
 function hasAvailabilityIntent(text) {
   const normalized = normalizeText(text);
   return AVAILABILITY_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
@@ -955,6 +960,14 @@ async function continueFlow({
     }
 
     if (!reservationIntent && !queryIntent && !registerIntent) {
+      if (hasGreeting(text)) {
+        const welcome = buildWelcomeMessage(businessSettings, businessName, pushName || '');
+        return {
+          state: buildState('main_menu', { pushName }),
+          replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
+        };
+      }
+
       return {
         state: buildState('main_menu', { pushName }),
         replies: [[

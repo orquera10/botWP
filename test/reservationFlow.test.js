@@ -53,6 +53,17 @@ test('un saludo presenta al asistente y no inicia el registro', async () => {
   assert.equal(directIntent.state?.step, 'main_menu');
   assert.match(directIntent.replies[0], /asistente virtual de La Toxica/i);
   assert.doesNotMatch(directIntent.replies[0], /numero de telefono/i);
+
+  const repeatedGreeting = await handleReservationFlow({
+    ...baseInput,
+    state: mainMenuState(),
+    text: 'hola',
+    reservasApi: fakeApi()
+  });
+  assert.equal(repeatedGreeting.state?.step, 'main_menu');
+  assert.match(repeatedGreeting.replies[0], /¡Hola, Joaquin!/i);
+  assert.match(repeatedGreeting.replies[0], /asistente virtual/i);
+  assert.doesNotMatch(repeatedGreeting.replies[0], /No pude identificar una opcion/i);
 });
 
 test('un pedido de registro en el primer contacto tambien pasa por el menu principal', async () => {

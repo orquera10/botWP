@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { handleReservationFlow } from '../src/reservationFlow.js';
+import { handleRegistrationFlow, handleReservationFlow } from '../src/reservationFlow.js';
 import {
   addDaysToIso,
   formatIsoDateForUser,
@@ -50,10 +50,10 @@ test('la opcion 1 inicia la reserva y explica el pedido de telefono para un LID'
   assert.match(result.replies[0], /WhatsApp no me lo proporciono automaticamente/i);
 });
 
-test('las opciones 2 y 3 activan consulta y productos desde el menu', async () => {
+test('las opciones 3 y 4 activan consulta y productos desde el menu', async () => {
   const queryResult = await handleReservationFlow({
     ...baseInput,
-    text: '2',
+    text: '3',
     reservasApi: fakeApi()
   });
   assert.equal(queryResult.state?.step, 'ask_phone');
@@ -61,12 +61,89 @@ test('las opciones 2 y 3 activan consulta y productos desde el menu', async () =
 
   const productResult = await handleReservationFlow({
     ...baseInput,
-    text: '3',
+    text: '4',
     businessSettings: { catalogUrl: 'https://ejemplo.com/catalogo' },
     reservasApi: fakeApi()
   });
   assert.equal(productResult.state, null);
   assert.match(productResult.replies[0], /https:\/\/ejemplo\.com\/catalogo/);
+});
+
+test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reservar', async () => {
+  const canchas = [{ id: 1, nombre: 'Cancha 1' }];
+  const slots = [{ fecha: todayIsoInBusinessTimeZone(), inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }];
+  const api = fakeApi({
+    listarCanchas: async () => canchas,
+    consultarDisponibilidad: async () => slots
+  });
+
+  const started = await handleReservationFlow({ ...baseInput, text: '2', reservasApi: api });
+  assert.equal(started.state?.step, 'ask_cancha');
+  assert.equal(started.state?.data?.availabilityOnly, true);
+
+  const court = await handleReservationFlow({ ...baseInput, state: started.state, text: '1', reservasApi: api });
+  const duration = await handleReservationFlow({ ...baseInput, state: court.state, text: '1', reservasApi: api });
+  const availability = await handleReservationFlow({
+    ...baseInput,
+    state: duration.state,
+    text: 'hoy',
+    reservasApi: api
+  });
+
+  assert.equal(availability.state?.step, 'ask_availability_reserve');
+  assert.match(availability.replies[0], /¿Queres reservar uno de estos horarios\?/i);
+  assert.doesNotMatch(availability.replies[0], /numero de contacto/i);
+
+  const accepted = await handleReservationFlow({
+    ...baseInput,
+    state: availability.state,
+    text: '1',
+    reservasApi: api
+  });
+  assert.equal(accepted.state?.step, 'ask_slot');
+
+  const selected = await handleReservationFlow({
+    ...baseInput,
+    state: accepted.state,
+    text: '1',
+    reservasApi: api
+  });
+  assert.equal(selected.state?.step, 'ask_phone');
+  assert.equal(selected.state?.data?.intent, 'reservation_after_availability');
+  assert.equal(selected.state?.data?.slot?.inicio, '18:00');
+
+  const registrationApi = fakeApi({
+    consultarCliente: async () => ({ exists: false }),
+    crearCliente: async ({ nombre, email, telefono }) => ({
+      created: true,
+      cliente: { nombre, email, telefono }
+    }),
+    listarTerminos: async () => ['La seña confirma el turno.']
+  });
+  const identified = await handleReservationFlow({
+    ...baseInput,
+    state: selected.state,
+    text: '+54 9 388 410-4530',
+    reservasApi: registrationApi
+  });
+  assert.equal(identified.targetFlow, 'registration');
+  assert.equal(identified.state?.step, 'ask_register_name');
+
+  const named = await handleRegistrationFlow({
+    ...baseInput,
+    state: identified.state,
+    text: 'Juan Perez',
+    reservasApi: registrationApi
+  });
+  const registered = await handleRegistrationFlow({
+    ...baseInput,
+    state: named.state,
+    text: 'juan@example.com',
+    reservasApi: registrationApi
+  });
+  assert.equal(registered.targetFlow, 'reservation');
+  assert.equal(registered.state?.step, 'ask_terms');
+  assert.equal(registered.state?.data?.slot?.inicio, '18:00');
 });
 
 test('una opcion numerica dentro de una reserva sigue siendo una seleccion', async () => {

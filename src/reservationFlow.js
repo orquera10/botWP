@@ -41,6 +41,7 @@ const REGISTER_TRIGGER_WORDS = [
   'alta usuario'
 ];
 const PRODUCT_TRIGGER_WORDS = ['productos', 'producto', 'catalogo', 'catálogo'];
+const AVAILABILITY_TRIGGER_WORDS = ['disponibilidad', 'ver disponibilidad', 'horarios disponibles'];
 const CANCEL_WORDS = ['cancelar', 'salir', 'menu', 'reiniciar'];
 const BACK_WORDS = ['volver', 'atras', '0'];
 const DEFAULT_FLOW_TIMEOUT_MINUTES = 120;
@@ -111,11 +112,17 @@ function hasProductIntent(text) {
   return PRODUCT_TRIGGER_WORDS.some((word) => normalized === normalizeText(word));
 }
 
+function hasAvailabilityIntent(text) {
+  const normalized = normalizeText(text);
+  return AVAILABILITY_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
+}
+
 function parseMainMenuChoice(text) {
   const normalized = normalizeText(text);
   if (normalized === '1') return 'reservation';
-  if (normalized === '2') return 'query';
-  if (normalized === '3') return 'products';
+  if (normalized === '2') return 'availability';
+  if (normalized === '3') return 'query';
+  if (normalized === '4') return 'products';
   return null;
 }
 
@@ -210,12 +217,19 @@ function formatSlots(slots) {
     .join('\n');
 }
 
+function formatSlotsForAvailability(slots) {
+  return slots
+    .map((slot) => `- ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
+    .join('\n');
+}
+
 function userMenuMessage(_businessSettings = {}, intro = '') {
   const menu = [
     '¿Que queres hacer?',
     '1. Buscar un turno',
-    '2. Ver mis reservas',
-    '3. Ver productos',
+    '2. Ver disponibilidad',
+    '3. Ver mis reservas',
+    '4. Ver productos',
     '',
     'Responde con el numero o escribime lo que necesitas.'
   ].join('\n');
@@ -229,6 +243,13 @@ function mainMenuMessage(businessSettings = {}) {
 
 function goBack(state, businessSettings = {}) {
   const data = state.data || {};
+
+  if (state.step === 'ask_phone' && data.intent === 'reservation_after_availability') {
+    return {
+      state: buildState('ask_slot', data),
+      replies: [`Volvamos a elegir el horario. Las opciones son:\n${formatSlots(data.slots || [])}`]
+    };
+  }
 
   if (['ask_phone', 'ask_register_name', 'ask_cancha'].includes(state.step)) {
     return { state: null, replies: [mainMenuMessage(businessSettings)] };
@@ -256,6 +277,13 @@ function goBack(state, businessSettings = {}) {
   }
 
   if (state.step === 'ask_slot') {
+    return {
+      state: buildState('ask_fecha', data),
+      replies: [dateRequestMessage('Volvamos a la fecha.', 'Tambien podes escribir "volver".')]
+    };
+  }
+
+  if (state.step === 'ask_availability_reserve') {
     return {
       state: buildState('ask_fecha', data),
       replies: [dateRequestMessage('Volvamos a la fecha.', 'Tambien podes escribir "volver".')]
@@ -429,12 +457,75 @@ async function startFlow({ phone, pushName, registrationAvailable = true }) {
   };
 }
 
-function startRegisterFlow({ phone, pushName, after = 'menu', intro = 'Te ayudo a registrarte.' }) {
+async function startAvailabilityFlow() {
+  const canchas = await listarCanchas();
+  return {
+    state: buildState('ask_cancha', { availabilityOnly: true, canchas }),
+    replies: [`Para consultar disponibilidad, elegi la cancha respondiendo con el numero:\n${formatCanchas(canchas)}`]
+  };
+}
+
+async function continueSelectedAvailability({
+  data,
+  phone,
+  pushName,
+  registrationAvailable = true
+}) {
+  const identity = await identifyClient(phone);
+
+  if (!identity.found) {
+    if (!registrationAvailable) {
+      return {
+        state: null,
+        replies: ['Para reservar necesitas estar registrado, pero el registro automatico no esta habilitado para este negocio.']
+      };
+    }
+
+    return {
+      ...startRegisterFlow({
+        phone,
+        pushName,
+        after: 'availability_reservation',
+        reservationData: data,
+        intro: 'El horario sigue disponible. Para completar la reserva necesito registrar tus datos.'
+      }),
+      targetFlow: 'registration'
+    };
+  }
+
+  const cliente = identity.cliente || {};
+  const terminos = await listarTerminos({
+    tipo: Number(data.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
+    cancha: data.cancha?.id
+  });
+  const nextData = {
+    ...data,
+    phone,
+    nombre: cliente.nombre || pushName || '',
+    email: cliente.email || '',
+    existingClient: true,
+    terminos
+  };
+
+  return {
+    state: buildState('ask_terms', nextData),
+    replies: [`${compactTerms(terminos)}\n\nPara aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.`]
+  };
+}
+
+function startRegisterFlow({
+  phone,
+  pushName,
+  after = 'menu',
+  reservationData = null,
+  intro = 'Te ayudo a registrarte.'
+}) {
   return {
     state: buildState('ask_register_name', {
       phone,
       pushName,
-      after
+      after,
+      reservationData
     }),
     replies: [`${intro}\nPasame tu nombre completo. Para volver al menu, escribi "volver".`]
   };
@@ -449,6 +540,34 @@ async function finishRegisterFlow(data, businessSettings = {}) {
   });
   const cliente = created.cliente || emailIdentity.cliente || {};
   const updatedByExistingEmail = emailIdentity.found && !created.created;
+
+  if (data.after === 'availability_reservation') {
+    const reservationData = data.reservationData || {};
+    const terminos = await listarTerminos({
+      tipo: Number(reservationData.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
+      cancha: reservationData.cancha?.id
+    });
+    return {
+      targetFlow: 'reservation',
+      state: buildState('ask_terms', {
+        ...reservationData,
+        phone: data.phone,
+        nombre: cliente.nombre || data.nombre,
+        email: cliente.email || data.email,
+        existingClient: true,
+        terminos
+      }),
+      replies: [[
+        updatedByExistingEmail
+          ? 'Listo, encontre ese email y asocie el telefono.'
+          : created.created
+            ? 'Listo, ya quedaste registrado.'
+            : 'Listo, ya encontre tus datos.',
+        compactTerms(terminos),
+        'Para aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.'
+      ].join('\n\n')]
+    };
+  }
 
   if (data.after === 'reservation') {
     const canchas = await listarCanchas();
@@ -582,6 +701,19 @@ async function askDisponibilidad(data) {
     };
   }
 
+  if (data.availabilityOnly) {
+    return {
+      state: buildState('ask_availability_reserve', { ...data, slots }),
+      replies: [[
+        `Estos horarios estan disponibles para el ${displayDate(data.fecha)}:`,
+        formatSlotsForAvailability(slots),
+        '¿Queres reservar uno de estos horarios?',
+        '1. Si, reservar',
+        '2. No, volver al menu'
+      ].join('\n')]
+    };
+  }
+
   return {
     state: buildState('ask_slot', { ...data, slots }),
     replies: [`Estos horarios estan disponibles. Responde con el numero:\n${formatSlots(slots)}`]
@@ -615,7 +747,7 @@ async function continueFlow({
   }
 
   if (state && isExpired(state)) {
-    if (!hasReservationIntent(text) && !hasQueryIntent(text) && !hasRegisterIntent(text)) {
+    if (!hasReservationIntent(text) && !hasAvailabilityIntent(text) && !hasQueryIntent(text) && !hasRegisterIntent(text)) {
       return {
         state: null,
         replies: [
@@ -623,6 +755,17 @@ async function continueFlow({
             `La conversacion anterior quedo pausada mas de ${FLOW_TIMEOUT_MINUTES} minutos y la reinicie.`,
             userMenuMessage(businessSettings)
           ].join('\n\n')
+        ]
+      };
+    }
+
+    if (hasAvailabilityIntent(text)) {
+      const restartedAvailability = await startAvailabilityFlow();
+      return {
+        state: restartedAvailability.state,
+        replies: [
+          `La conversacion anterior habia vencido despues de ${FLOW_TIMEOUT_MINUTES} minutos sin actividad.`,
+          ...restartedAvailability.replies
         ]
       };
     }
@@ -670,7 +813,8 @@ async function continueFlow({
 
   if (!state) {
     const menuChoice = parseMainMenuChoice(text);
-    const reservationIntent = menuChoice === 'reservation' || hasReservationIntent(text);
+    const availabilityIntent = menuChoice === 'availability' || hasAvailabilityIntent(text);
+    const reservationIntent = !availabilityIntent && (menuChoice === 'reservation' || hasReservationIntent(text));
     const queryIntent = menuChoice === 'query' || hasQueryIntent(text);
     const registerIntent = hasRegisterIntent(text);
     const productIntent = menuChoice === 'products' || hasProductIntent(text);
@@ -683,6 +827,10 @@ async function continueFlow({
           ? `Podes consultar nuestro catalogo de productos aca:\n${catalogUrl}`
           : 'El catalogo de productos no esta disponible en este momento.']
       };
+    }
+
+    if (availabilityIntent) {
+      return startAvailabilityFlow();
     }
 
     if (!reservationIntent && !queryIntent && !registerIntent) {
@@ -765,6 +913,28 @@ async function continueFlow({
     return startRegisterFlow({ phone, pushName });
   }
 
+  if (state.step === 'ask_availability_reserve') {
+    const answer = normalizeText(text);
+    if (['1', 'si', 'reservar', 'si reservar'].includes(answer)) {
+      return {
+        state: buildState('ask_slot', data),
+        replies: [`Perfecto. Elegi el horario que queres reservar:\n${formatSlots(data.slots || [])}`]
+      };
+    }
+
+    if (['2', 'no'].includes(answer)) {
+      return {
+        state: null,
+        replies: [mainMenuMessage(businessSettings)]
+      };
+    }
+
+    return {
+      state,
+      replies: ['Responde 1 para reservar uno de los horarios o 2 para volver al menu.']
+    };
+  }
+
   if (state.step === 'ask_phone') {
     if (!looksLikeArgentinePhone(text)) {
       return {
@@ -791,6 +961,15 @@ async function continueFlow({
       }
 
       return startRegisterFlow({ phone, pushName: data.pushName || pushName });
+    }
+
+    if (data.intent === 'reservation_after_availability') {
+      return continueSelectedAvailability({
+        data: { ...data, phone: normalizeArgentinePhone(text) },
+        phone: normalizeArgentinePhone(text),
+        pushName: data.pushName || pushName,
+        registrationAvailable
+      });
     }
 
     return startFlow({
@@ -872,6 +1051,28 @@ async function continueFlow({
     const slot = parseChoice(text, data.slots || [], 'label');
     if (!slot) {
       return { state, replies: [`Esa no es una de las opciones. Los horarios disponibles son:\n${formatSlots(data.slots || [])}`] };
+    }
+
+    if (data.availabilityOnly) {
+      const selectedData = { ...data, slot };
+      const phone = data.phone || phoneFromJid(canonicalJid);
+      if (!phone) {
+        return {
+          state: buildState('ask_phone', {
+            ...selectedData,
+            pushName,
+            intent: 'reservation_after_availability'
+          }),
+          replies: [phoneRequestMessage('completar la reserva', businessName)]
+        };
+      }
+
+      return continueSelectedAvailability({
+        data: selectedData,
+        phone,
+        pushName,
+        registrationAvailable
+      });
     }
 
     const terminos = await listarTerminos({

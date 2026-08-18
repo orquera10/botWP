@@ -22,7 +22,7 @@ test("hola muestra el menu de expedientes", async () => {
   assert.equal(result.state.step, "menu");
   assert.match(result.replies[0], /Menú principal/);
   assert.match(result.replies[0], /1.*Consulta de expediente/);
-  assert.doesNotMatch(result.replies[0], /\*2\*/);
+  assert.match(result.replies[0], /2.*Dar salida/);
 });
 
 test("la opcion 1 inicia la consulta guiada", async () => {
@@ -78,6 +78,57 @@ test("guía código, número y año y consulta la API", async () => {
   assert.equal(result.state.step, "menu");
   assert.match(result.replies[0], /Expediente 769-1234\/2026/);
   assert.match(result.replies[0], /Mesa → Archivo/);
+});
+
+test("da salida a un expediente solo despues de confirmar", async () => {
+  let registered = null;
+  const api = {
+    prepararSalida: async (data) => ({
+      expediente: { codigo: data.codigo, numero: data.numero, anio: data.anio, asunto: "Compra de equipos" },
+      origen: { codigosector: "10", sector: "Mesa de entradas" },
+      destinos: [
+        { codigosector: "20", sector: "Contaduria" },
+        { codigosector: "30", sector: "Archivo" },
+      ],
+    }),
+    registrarSalida: async (data) => {
+      registered = data;
+      return {
+        origen: { sector: "Mesa de entradas" },
+        destino: { sector: "Archivo" },
+        movimiento: { movimiento: 8 },
+      };
+    },
+  };
+  const base = { expedientesApi: api, authorizedPhone: "5493884104530" };
+
+  const menu = await handleExpedienteFlow({ ...base, text: "hola" });
+  const start = await handleExpedienteFlow({ ...base, currentState: menu.state, text: "2" });
+  assert.equal(start.state.step, "ask_salida_clave");
+
+  const prepared = await handleExpedienteFlow({ ...base, currentState: start.state, text: "769 220 2026" });
+  assert.equal(prepared.state.step, "ask_salida_destino");
+  assert.match(prepared.replies[0], /2\. 30 - Archivo/);
+
+  const destination = await handleExpedienteFlow({ ...base, currentState: prepared.state, text: "2" });
+  assert.equal(destination.state.step, "ask_salida_motivo");
+
+  const reason = await handleExpedienteFlow({ ...base, currentState: destination.state, text: "Pase para archivo" });
+  assert.equal(reason.state.step, "confirm_salida");
+  assert.equal(registered, null);
+
+  const result = await handleExpedienteFlow({ ...base, currentState: reason.state, text: "CONFIRMAR" });
+  assert.deepEqual(registered, {
+    codigo: "769",
+    numero: 220,
+    anio: 2026,
+    telefono: "5493884104530",
+    destino: "30",
+    motivo: "Pase para archivo",
+  });
+  assert.equal(result.state.step, "menu");
+  assert.match(result.replies[0], /Salida registrada correctamente/);
+  assert.match(result.replies[0], /Destino: Archivo/);
 });
 
 test("informa cuando el expediente no existe", async () => {

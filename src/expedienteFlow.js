@@ -1,6 +1,6 @@
 const CANCEL_WORDS = new Set(["cancelar", "salir", "fin"]);
 const MENU_WORDS = new Set(["menu", "menú", "hola", "inicio", "expediente", "expedientes", "expte"]);
-const MAIN_MENU_MESSAGE = "📋 *Menú principal*\n\n*1* - Consulta de expediente\n\nRespondé *1* para comenzar.";
+const MAIN_MENU_MESSAGE = "📋 *Menú principal*\n\n*1* - Consulta de expediente\n*2* - Dar salida a un expediente\n\nRespondé con el número de opción.";
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -98,12 +98,76 @@ async function consult(key, expedientesApi) {
   }
 }
 
+function salidaKeyPrompt() {
+  return "📤 *Dar salida a un expediente*\nIngresá código, número y año juntos.\nPor ejemplo: *769 220 2026*.";
+}
+
+function formatDestinos(destinos) {
+  return destinos
+    .map((sector, index) => `${index + 1}. ${clean(sector.codigosector)} - ${clean(sector.sector)}`)
+    .join("\n");
+}
+
+async function prepareSalida(key, expedientesApi, authorizedPhone) {
+  try {
+    const result = await expedientesApi.prepararSalida({ ...key, telefono: authorizedPhone });
+    const destinos = Array.isArray(result.destinos) ? result.destinos : [];
+    if (!destinos.length) {
+      return mainMenu(["No hay sectores de destino habilitados para registrar la salida."]);
+    }
+    return {
+      handled: true,
+      state: state("ask_salida_destino", {
+        key,
+        expediente: result.expediente,
+        origen: result.origen,
+        destinos: destinos.map(({ codigosector, sector }) => ({ codigosector, sector })),
+      }),
+      replies: [
+        `📄 *Expediente ${key.codigo}-${key.numero}/${key.anio}*\n` +
+          `Asunto: ${clean(result.expediente?.asunto)}\n` +
+          `Origen: ${clean(result.origen?.sector)}\n\n` +
+          `Elegí el sector de destino:\n${formatDestinos(destinos)}`
+      ]
+    };
+  } catch (error) {
+    return {
+      ...mainMenu([error.message || "No se pudo preparar la salida del expediente."]),
+      error,
+    };
+  }
+}
+
+async function registerSalida(data, expedientesApi, authorizedPhone) {
+  try {
+    const result = await expedientesApi.registrarSalida({
+      ...data.key,
+      telefono: authorizedPhone,
+      destino: data.destino.codigosector,
+      motivo: data.motivo,
+    });
+    return mainMenu([
+      `✅ *Salida registrada correctamente*\n` +
+      `Expediente: ${data.key.codigo}-${data.key.numero}/${data.key.anio}\n` +
+      `Origen: ${clean(result.origen?.sector || data.origen?.sector)}\n` +
+      `Destino: ${clean(result.destino?.sector || data.destino?.sector)}\n` +
+      `Movimiento: ${clean(result.movimiento?.movimiento)}`
+    ]);
+  } catch (error) {
+    return {
+      ...mainMenu([error.message || "No se pudo registrar la salida del expediente."]),
+      error,
+    };
+  }
+}
+
 export async function handleExpedienteFlow({
   currentState = null,
   text,
   expedientesApi,
   justLinkedPhone = false,
-  authorizedUser = null
+  authorizedUser = null,
+  authorizedPhone = ""
 }) {
   const input = String(text || "").trim();
   const normalized = normalize(input);
@@ -117,17 +181,71 @@ export async function handleExpedienteFlow({
   }
 
   if (CANCEL_WORDS.has(normalized)) {
-    return mainMenu(["Consulta finalizada."]);
+    return mainMenu(["Operación cancelada."]);
   }
-  if (directKey) return consult(directKey, expedientesApi);
 
   if (!currentState) {
+    if (directKey) return consult(directKey, expedientesApi);
     return mainMenu();
   }
 
   if (MENU_WORDS.has(normalized)) {
     return mainMenu();
   }
+
+  if (currentState.step === "ask_salida_clave") {
+    if (!directKey) {
+      return { handled: true, state: currentState, replies: [salidaKeyPrompt()] };
+    }
+    return prepareSalida(directKey, expedientesApi, authorizedPhone);
+  }
+  if (currentState.step === "ask_salida_destino") {
+    const selection = parsePositiveInteger(input);
+    const destino = selection ? currentState.data.destinos?.[selection - 1] : null;
+    if (!destino) {
+      return {
+        handled: true,
+        state: currentState,
+        replies: [`Elegí una opción válida:\n${formatDestinos(currentState.data.destinos || [])}`]
+      };
+    }
+    return {
+      handled: true,
+      state: state("ask_salida_motivo", { ...currentState.data, destino }),
+      replies: [
+        `Destino seleccionado: *${clean(destino.sector)}*.\n` +
+        "Escribí el motivo de la salida o respondé *0* para continuar sin motivo."
+      ]
+    };
+  }
+  if (currentState.step === "ask_salida_motivo") {
+    if (!input) {
+      return { handled: true, state: currentState, replies: ["Ingresá un motivo o respondé *0*."] };
+    }
+    const motivo = input === "0" ? "" : input;
+    const data = { ...currentState.data, motivo };
+    return {
+      handled: true,
+      state: state("confirm_salida", data),
+      replies: [
+        `⚠️ *Confirmar salida*\n` +
+        `Expediente: ${data.key.codigo}-${data.key.numero}/${data.key.anio}\n` +
+        `Origen: ${clean(data.origen?.sector)}\n` +
+        `Destino: ${clean(data.destino?.sector)}\n` +
+        `Motivo: ${clean(motivo, "Sin motivo")}\n\n` +
+        "Respondé *CONFIRMAR* para registrar la salida o *CANCELAR* para volver al menú."
+      ]
+    };
+  }
+  if (currentState.step === "confirm_salida") {
+    if (normalized === "confirmar") {
+      return registerSalida(currentState.data, expedientesApi, authorizedPhone);
+    }
+    return mainMenu(["Salida cancelada."]);
+  }
+
+  if (directKey) return consult(directKey, expedientesApi);
+
   if (currentState.step === "menu") {
     if (normalized === "1") {
       return {
@@ -136,6 +254,13 @@ export async function handleExpedienteFlow({
         replies: [
           "📂 *Consulta de expediente*\nIngresá el código. Por ejemplo: *769*.\n\nTambién podés enviar los datos juntos como *769 220 2026*."
         ]
+      };
+    }
+    if (normalized === "2") {
+      return {
+        handled: true,
+        state: state("ask_salida_clave"),
+        replies: [salidaKeyPrompt()]
       };
     }
     return mainMenu();

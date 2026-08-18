@@ -10,9 +10,18 @@ function usuarioEndpoint(baseUrl, telefono) {
   return `${apiRoot(baseUrl)}/usuarios/telefono/${encodeURIComponent(telefono)}`;
 }
 
-async function request(url, apiKey) {
+function salidaEndpoint(baseUrl, codigo, numero, anio) {
+  return `${apiRoot(baseUrl)}/expedientes/${encodeURIComponent(codigo)}/${numero}/${anio}/salida`;
+}
+
+async function request(url, apiKey, { method = "GET", body } = {}) {
   const response = await fetch(url, {
-    headers: { "X-API-Key": apiKey },
+    method,
+    headers: {
+      "X-API-Key": apiKey,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(15000),
   });
   const text = await response.text();
@@ -53,6 +62,39 @@ export function createExpedientesApi({ baseUrl = "", apiKey = "" } = {}) {
 
       if (!response.ok) {
         const error = new Error(data.error || `Error de expedientes (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    },
+    async prepararSalida({ codigo, numero, anio, telefono }) {
+      if (!baseUrl || !apiKey) {
+        throw new Error("Falta configurar la URL o la API key de expedientes.");
+      }
+      const url = new URL(salidaEndpoint(baseUrl, codigo, numero, anio));
+      url.searchParams.set("telefono", telefono);
+      const { response, data } = await request(url.toString(), apiKey);
+      if (!response.ok) {
+        const error = new Error(data.error || `Error preparando salida (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    },
+    async registrarSalida({ codigo, numero, anio, telefono, destino, motivo = "" }) {
+      if (!baseUrl || !apiKey) {
+        throw new Error("Falta configurar la URL o la API key de expedientes.");
+      }
+      const { response, data } = await request(
+        salidaEndpoint(baseUrl, codigo, numero, anio),
+        apiKey,
+        {
+          method: "POST",
+          body: { telefono, destino, motivo },
+        }
+      );
+      if (!response.ok) {
+        const error = new Error(data.error || `Error registrando salida (${response.status}).`);
         error.status = response.status;
         throw error;
       }

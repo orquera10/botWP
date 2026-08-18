@@ -700,7 +700,8 @@ async function connectSession(clientName) {
                 text: payload.text,
                 expedientesApi,
                 justLinkedPhone: linkedExpedientesPhone,
-                authorizedUser: autorizacion.usuario
+                authorizedUser: autorizacion.usuario,
+                authorizedPhone: senderPhone
               });
               handledByExpedienteFlow = expedienteResult.handled;
 

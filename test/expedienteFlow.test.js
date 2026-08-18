@@ -109,7 +109,9 @@ test("da salida a un expediente solo despues de confirmar", async () => {
 
   const prepared = await handleExpedienteFlow({ ...base, currentState: start.state, text: "769 220 2026" });
   assert.equal(prepared.state.step, "ask_salida_destino");
-  assert.match(prepared.replies[0], /2\. 30 - Archivo/);
+  assert.match(prepared.replies[0], /1\. Contaduria/);
+  assert.match(prepared.replies[0], /2\. Archivo/);
+  assert.doesNotMatch(prepared.replies[0], /1\. 20 -|2\. 30 -/);
 
   const destination = await handleExpedienteFlow({ ...base, currentState: prepared.state, text: "2" });
   assert.equal(destination.state.step, "ask_salida_motivo");

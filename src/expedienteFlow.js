@@ -104,7 +104,7 @@ function salidaKeyPrompt() {
 
 function formatDestinos(destinos) {
   return destinos
-    .map((sector, index) => `${index + 1}. ${clean(sector.codigosector)} - ${clean(sector.sector)}`)
+    .map((sector, index) => `${index + 1}. ${clean(sector.sector)}`)
     .join("\n");
 }
 

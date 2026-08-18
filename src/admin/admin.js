@@ -29,6 +29,7 @@ const els = {
   businessReservationsInput: document.querySelector('#business-reservations-input'),
   businessRegistrationInput: document.querySelector('#business-registration-input'),
   businessAdminAgendaInput: document.querySelector('#business-admin-agenda-input'),
+  businessExpedientesInput: document.querySelector('#business-expedientes-input'),
   businessApiUrlInput: document.querySelector('#business-api-url-input'),
   businessApiKeyInput: document.querySelector('#business-api-key-input'),
   businessAdminApiUrlInput: document.querySelector('#business-admin-api-url-input'),
@@ -261,6 +262,7 @@ function populateBusinessForm(businessId = '') {
     els.businessReservationsInput.checked = true;
     els.businessRegistrationInput.checked = true;
     els.businessAdminAgendaInput.checked = false;
+    els.businessExpedientesInput.checked = false;
     els.businessFormMode.textContent = 'Creando un negocio nuevo';
     els.businessFormMode.classList.remove('editing');
     els.businessSubmitButton.textContent = 'Crear negocio';
@@ -275,6 +277,7 @@ function populateBusinessForm(businessId = '') {
   els.businessReservationsInput.checked = flows.includes('reservas');
   els.businessRegistrationInput.checked = flows.includes('registro');
   els.businessAdminAgendaInput.checked = flows.includes('admin_agenda');
+  els.businessExpedientesInput.checked = flows.includes('expedientes');
   els.businessApiUrlInput.value = business.apiUrl || '';
   els.businessApiKeyInput.value = '';
   els.businessAdminApiUrlInput.value = business.adminApiUrl || '';
@@ -297,7 +300,8 @@ async function loadBusinesses({ refreshEditor = false } = {}) {
       const flowLabels = (business.flows || []).map((flow) => ({
         reservas: 'Reservas',
         registro: 'Registro',
-        admin_agenda: 'Agenda admin'
+        admin_agenda: 'Agenda admin',
+        expedientes: 'Expedientes'
       })[flow] || flow);
       const flowLabel = flowLabels.length ? flowLabels.join(' + ') : 'sin respuestas automaticas';
       return `<option value="${escapeHtml(business.id)}">${escapeHtml(business.name)} (${flowLabel})</option>`;
@@ -426,7 +430,8 @@ async function createBusiness(event) {
     flows: [
       els.businessReservationsInput.checked ? 'reservas' : '',
       els.businessRegistrationInput.checked ? 'registro' : '',
-      els.businessAdminAgendaInput.checked ? 'admin_agenda' : ''
+      els.businessAdminAgendaInput.checked ? 'admin_agenda' : '',
+      els.businessExpedientesInput.checked ? 'expedientes' : ''
     ].filter(Boolean),
     apiUrl: els.businessApiUrlInput.value.trim(),
     apiKey: els.businessApiKeyInput.value.trim(),

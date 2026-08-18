@@ -40,6 +40,8 @@ import { handleRegistrationFlow, handleReservationFlow } from './reservationFlow
 import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
+import { createExpedientesApi } from './expedientesApi.js';
+import { handleExpedienteFlow } from './expedienteFlow.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const LEGACY_SESSION_DIR = process.env.SESSION_DIR || 'sessions/whatsapp';
@@ -656,8 +658,79 @@ async function connectSession(clientName) {
             }
           }
 
+          let handledByExpedienteFlow = false;
+          if (!handledByAdminFlow && session.businessFlows.includes('expedientes')) {
+            const senderPhone = canonicalConversationJid?.endsWith('@s.whatsapp.net')
+              ? canonicalConversationJid.split('@')[0].replace(/\D/g, '')
+              : '';
+            const expedientesApi = createExpedientesApi({
+              baseUrl: session.businessAdminApiUrl,
+              apiKey: session.businessAdminApiKey
+            });
+            let autorizacion = { autorizado: false };
+            let authorizationError = null;
+            if (senderPhone) {
+              try {
+                autorizacion = await expedientesApi.autorizarTelefono(senderPhone);
+              } catch (error) {
+                authorizationError = error;
+                logger.warn(
+                  { clientId: session.id, businessId: session.businessId, error },
+                  'No se pudo verificar el usuario de expedientes'
+                );
+              }
+            }
+
+            if (autorizacion.autorizado) {
+              const expedienteState = await getBotFlowState(
+                session.id,
+                canonicalConversationJid,
+                'expedientes'
+              );
+              const expedienteResult = await handleExpedienteFlow({
+                currentState: expedienteState,
+                text: payload.text,
+                expedientesApi
+              });
+              handledByExpedienteFlow = expedienteResult.handled;
+
+              if (expedienteResult.state) {
+                await saveBotFlowState(
+                  session.id,
+                  canonicalConversationJid,
+                  'expedientes',
+                  expedienteResult.state
+                );
+              } else if (expedienteState) {
+                await clearBotFlowState(session.id, canonicalConversationJid, 'expedientes');
+              }
+              for (const reply of expedienteResult.replies || []) {
+                await sendBotText(session, payload.from, reply);
+              }
+              if (expedienteResult.error) {
+                logger.warn(
+                  { clientId: session.id, businessId: session.businessId, error: expedienteResult.error },
+                  'La API de expedientes no pudo completar la consulta'
+                );
+              }
+            } else if (!authorizationError &&
+              payload.from?.endsWith('@lid') &&
+              await shouldAskForLidVerification(session.id, payload.from)
+            ) {
+              handledByExpedienteFlow = true;
+              await sendBotText(
+                session,
+                payload.from,
+                `${buildLidVerificationMessage(session)}\n\nDespués de asociarlo, escribí *expediente* para comenzar.`
+              );
+            } else if (/^(hola|menu|menú|inicio|expediente|expte)$/i.test(String(payload.text || '').trim())) {
+              handledByExpedienteFlow = true;
+              await clearBotFlowState(session.id, canonicalConversationJid, 'expedientes');
+            }
+          }
+
           let handledByRegistrationFlow = false;
-          if (!handledByAdminFlow && session.businessFlows.includes('registro')) {
+          if (!handledByAdminFlow && !handledByExpedienteFlow && session.businessFlows.includes('registro')) {
             const registrationState = await getBotFlowState(session.id, canonicalConversationJid, 'registration');
             const registrationResult = await handleRegistrationFlow({
               state: registrationState,
@@ -687,7 +760,7 @@ async function connectSession(clientName) {
             }
           }
 
-          if (!handledByAdminFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
+          if (!handledByAdminFlow && !handledByExpedienteFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
             let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
             const flowResult = await handleReservationFlow({
               state: reservationState,
@@ -1301,7 +1374,7 @@ app.post('/businesses', adminAuth, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const id = normalizeClientName(req.body.id || name);
   const flows = [...new Set(Array.isArray(req.body.flows) ? req.body.flows.map(String) : [])];
-  const allowedFlows = ['reservas', 'registro', 'admin_agenda'];
+  const allowedFlows = ['reservas', 'registro', 'admin_agenda', 'expedientes'];
   const flowType = flows.includes('reservas') ? 'reservas' : 'none';
   const apiUrl = String(req.body.apiUrl || '').trim();
   const apiKey = String(req.body.apiKey || '').trim();
@@ -1328,9 +1401,9 @@ app.post('/businesses', adminAuth, async (req, res) => {
     && (!(apiUrl || existingBusiness?.apiUrl) || (!apiKey && !existingBusiness?.apiKey))) {
     return res.status(400).json({ error: 'Reservas y registro necesitan su URL y API key.' });
   }
-  if (flows.includes('admin_agenda')
+  if (flows.some((flow) => ['admin_agenda', 'expedientes'].includes(flow))
     && (!(adminApiUrl || existingBusiness?.adminApiUrl) || (!adminApiKey && !existingBusiness?.adminApiKey))) {
-    return res.status(400).json({ error: 'La agenda administrativa necesita su URL y API key.' });
+    return res.status(400).json({ error: 'Los módulos administrativos necesitan su URL y API key.' });
   }
 
   const business = await saveBusinessProfile({

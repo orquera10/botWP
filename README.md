@@ -221,6 +221,21 @@ WEBHOOK_URL=https://tu-servidor.com/webhook
 
 El webhook incluye `clientId` y `clientName` para que sepas a que cliente pertenece el mensaje.
 
+## Consulta de expedientes por WhatsApp
+
+La rama `expedientes` incluye un circuito de consulta restringido a telefonos asociados a usuarios habilitados del sistema de expedientes. El usuario puede ingresar codigo, numero y anio paso a paso, o enviar una clave completa como `769-1234-2026`. La respuesta muestra los datos principales y los ultimos tres movimientos habilitados.
+
+Configuracion:
+
+1. En el backend de expedientes, definir `EXPEDIENTES_BOT_API_KEY` con una clave larga y redeployar.
+2. En el panel de este bot, crear o editar un negocio y habilitar **Consulta de expedientes**.
+3. En **URL de la API administrativa o de expedientes**, ingresar la URL publica del backend terminada en `/api/bot`.
+4. Guardar la misma clave en **API key administrativa o de expedientes**.
+5. En el sistema de expedientes, cargar el telefono de WhatsApp en cada usuario que deba consultar.
+6. Asociar la sesion de WhatsApp con ese negocio y reiniciar la sesion si ya estaba abierta.
+
+La API es de solo lectura y usa el encabezado `X-API-Key`. El bot consulta el telefono antes de cada mensaje y no responde si no pertenece a un usuario habilitado.
+
 ## Flujo de reservas por WhatsApp
 
 El bot puede tomar reservas conversando con el cliente y usando la API PHP del sistema de turnos.

@@ -1,5 +1,6 @@
 const CANCEL_WORDS = new Set(["cancelar", "salir", "fin"]);
 const MENU_WORDS = new Set(["menu", "menú", "hola", "inicio", "expediente", "expedientes", "expte"]);
+const MAIN_MENU_MESSAGE = "📋 *Menú principal*\n\n*1* - Consulta de expediente\n\nRespondé *1* para comenzar.";
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -7,6 +8,14 @@ function normalize(value) {
 
 function state(step, data = {}) {
   return { step, data, updatedAt: new Date().toISOString() };
+}
+
+function mainMenu(replies = []) {
+  return {
+    handled: true,
+    state: state("menu"),
+    replies: [...replies, MAIN_MENU_MESSAGE]
+  };
 }
 
 function parsePositiveInteger(value) {
@@ -75,21 +84,15 @@ async function consult(key, expedientesApi) {
       state: state("menu"),
       replies: [
         formatExpedienteResult(result),
-        'Responde *1* para consultar otro expediente o *2* para finalizar.',
+        MAIN_MENU_MESSAGE,
       ],
     };
   } catch (error) {
     if (error.status === 404) {
-      return {
-        handled: true,
-        state: state("ask_codigo"),
-        replies: ["No encontré ese expediente. Revisá los datos e ingresá nuevamente el código."],
-      };
+      return mainMenu(["No encontré ese expediente. Revisá los datos e intentá nuevamente."]);
     }
     return {
-      handled: true,
-      state: null,
-      replies: ["No pude consultar expedientes en este momento. Intentá nuevamente más tarde."],
+      ...mainMenu(["No pude consultar expedientes en este momento. Intentá nuevamente más tarde."]),
       error,
     };
   }
@@ -108,44 +111,34 @@ export async function handleExpedienteFlow({
 
   if (justLinkedPhone) {
     const name = String(authorizedUser?.nombre || "").trim();
-    return {
-      handled: true,
-      state: null,
-      replies: [
-        `${name ? `Listo, ${name}.` : "Listo."} Tu numero quedo asociado y autorizado.\nEscribi *expediente* para comenzar.`
-      ]
-    };
+    return mainMenu([
+      `${name ? `Listo, ${name}.` : "Listo."} Tu numero quedo asociado y autorizado.`
+    ]);
   }
 
   if (CANCEL_WORDS.has(normalized)) {
-    return { handled: true, state: null, replies: ["Consulta finalizada."] };
+    return mainMenu(["Consulta finalizada."]);
   }
   if (directKey) return consult(directKey, expedientesApi);
 
   if (!currentState) {
-    if (!MENU_WORDS.has(normalized) && !/consult(ar|a).*expediente/.test(normalized)) {
-      return { handled: false, state: null, replies: [] };
-    }
-    return {
-      handled: true,
-      state: state("ask_codigo"),
-      replies: [
-        "📂 *Consulta de expedientes*\nIngresá el código del expediente. Por ejemplo: *769*.\n\nTambién podés enviar los datos juntos como *769 220 2026*.",
-      ],
-    };
+    return mainMenu();
   }
 
   if (MENU_WORDS.has(normalized)) {
-    return { handled: true, state: state("ask_codigo"), replies: ["Ingresá el código del expediente."] };
+    return mainMenu();
   }
   if (currentState.step === "menu") {
     if (normalized === "1") {
-      return { handled: true, state: state("ask_codigo"), replies: ["Ingresá el código del expediente."] };
+      return {
+        handled: true,
+        state: state("ask_codigo"),
+        replies: [
+          "📂 *Consulta de expediente*\nIngresá el código. Por ejemplo: *769*.\n\nTambién podés enviar los datos juntos como *769 220 2026*."
+        ]
+      };
     }
-    if (normalized === "2") {
-      return { handled: true, state: null, replies: ["Consulta finalizada."] };
-    }
-    return { handled: true, state: currentState, replies: ["Respondé *1* para otra consulta o *2* para finalizar."] };
+    return mainMenu();
   }
   if (currentState.step === "ask_codigo") {
     if (!/^[a-zA-Z0-9]+$/.test(input)) {
@@ -165,5 +158,5 @@ export async function handleExpedienteFlow({
     return consult({ ...currentState.data, anio: Number(input) }, expedientesApi);
   }
 
-  return { handled: true, state: state("ask_codigo"), replies: ["Ingresá el código del expediente."] };
+  return mainMenu();
 }

@@ -14,6 +14,8 @@ import baileys, {
 import { Boom } from '@hapi/boom';
 import {
   clearBotFlowState,
+  deleteClientAssociations,
+  deleteClientMessages,
   initDatabase,
   isDatabaseEnabled,
   deleteDbClient,
@@ -42,6 +44,7 @@ import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { createExpedientesApi } from './expedientesApi.js';
 import { handleExpedienteFlow } from './expedienteFlow.js';
+import { sessionBusinessProfileFromClient } from './sessionBusinessProfile.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const LEGACY_SESSION_DIR = process.env.SESSION_DIR || 'sessions/whatsapp';
@@ -1000,17 +1003,7 @@ async function ensureSessionForRequest(req, res, next) {
     const clients = await listDbClients();
     const client = clients.find((item) => item.id === id);
     if (client) {
-      businessProfile = {
-        id: client.businessId,
-        name: client.businessName,
-        flowType: client.flowType,
-        flows: client.flows,
-        apiUrl: client.apiUrl,
-        apiKey: client.apiKey,
-        adminApiUrl: client.adminApiUrl,
-        adminApiKey: client.adminApiKey,
-        settings: client.settings
-      };
+      businessProfile = sessionBusinessProfileFromClient(client);
     }
   }
 
@@ -1130,6 +1123,33 @@ async function deleteClientHandler(req, res) {
       clientName: session.clientName
     }
   });
+}
+
+async function deleteClientMessagesHandler(req, res) {
+  const session = req.whatsappSession;
+  let deleted = { messages: session.recentMessages.length, conversations: 0 };
+
+  if (isDatabaseEnabled()) {
+    deleted = await deleteClientMessages(session.id);
+  }
+
+  session.recentMessages = [];
+  emitAdminEvent('conversation:update', { clientId: session.id });
+
+  return res.json({ ok: true, clientId: session.id, deleted });
+}
+
+async function deleteClientAssociationsHandler(req, res) {
+  const session = req.whatsappSession;
+
+  if (!isDatabaseEnabled()) {
+    return res.status(503).json({ error: 'PostgreSQL no esta configurado' });
+  }
+
+  const deleted = await deleteClientAssociations(session.id);
+  emitAdminEvent('conversation:update', { clientId: session.id });
+
+  return res.json({ ok: true, clientId: session.id, deleted });
 }
 
 async function logoutSession(session) {
@@ -1460,6 +1480,10 @@ app.post('/clients/:clientName/reset', resetSessionHandler);
 
 app.post('/clients/:clientName/aliases', linkAliasHandler);
 
+app.delete('/clients/:clientName/messages', apiAuth, deleteClientMessagesHandler);
+
+app.delete('/clients/:clientName/aliases', apiAuth, deleteClientAssociationsHandler);
+
 app.delete('/clients/:clientName', deleteClientHandler);
 
 app.get('/clients/:clientName/status', (req, res) => {
@@ -1665,17 +1689,7 @@ async function autoStartClients() {
     const manualRecoveryStatuses = new Set(['logged_out', 'connection_replaced', 'relink_required']);
     for (const client of clients.filter((item) => !manualRecoveryStatuses.has(item.status))) {
       const clientName = client.clientName || client.id;
-      getOrCreateSession(clientName, {
-        id: client.businessId,
-        name: client.businessName,
-        flowType: client.flowType,
-        flows: client.flows,
-        apiUrl: client.apiUrl,
-        apiKey: client.apiKey,
-        adminApiUrl: client.adminApiUrl,
-        adminApiKey: client.adminApiKey,
-        settings: client.settings
-      });
+      getOrCreateSession(clientName, sessionBusinessProfileFromClient(client));
       connectSession(clientName).catch((error) => {
         logger.warn({ clientName, error }, 'No se pudo auto-iniciar cliente');
       });

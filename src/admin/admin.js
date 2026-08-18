@@ -54,6 +54,8 @@ const els = {
   qrClientButton: document.querySelector('#qr-client-button'),
   resetClientButton: document.querySelector('#reset-client-button'),
   logoutClientButton: document.querySelector('#logout-client-button'),
+  deleteMessagesButton: document.querySelector('#delete-messages-button'),
+  deleteAssociationsButton: document.querySelector('#delete-associations-button'),
   deleteClientButton: document.querySelector('#delete-client-button'),
   qrBox: document.querySelector('#qr-box'),
   qrFrame: document.querySelector('#qr-frame'),
@@ -497,6 +499,38 @@ async function deleteSelectedClient() {
   await loadClients();
 }
 
+async function deleteSelectedClientMessages() {
+  const client = selectedClient();
+  if (!client) return;
+
+  const confirmed = window.confirm(
+    `Borrar todos los mensajes y conversaciones guardados de "${client.clientName || client.id}"? La sesion y las asociaciones se conservaran.`
+  );
+  if (!confirmed) return;
+
+  const result = await api(`/clients/${encodeURIComponent(client.id)}/messages`, { method: 'DELETE' });
+  state.selectedConversationJid = null;
+  els.messagesContext.textContent = 'Ultimos mensajes del cliente';
+  showToast(`Se borraron ${result.deleted.messages} mensajes.`);
+  await Promise.all([loadConversations(), loadMessages(), loadUnlinkedLids()]);
+}
+
+async function deleteSelectedClientAssociations() {
+  const client = selectedClient();
+  if (!client) return;
+
+  const confirmed = window.confirm(
+    `Borrar todas las asociaciones LID/telefono de "${client.clientName || client.id}"? Los mensajes y la sesion se conservaran.`
+  );
+  if (!confirmed) return;
+
+  const result = await api(`/clients/${encodeURIComponent(client.id)}/aliases`, { method: 'DELETE' });
+  els.aliasLidInput.value = '';
+  els.aliasPhoneInput.value = '';
+  showToast(`Se borraron ${result.deleted.associations} registros de asociacion.`);
+  await loadUnlinkedLids();
+}
+
 function openQr() {
   const client = selectedClient();
   if (!client) return;
@@ -679,6 +713,8 @@ els.startClientButton.addEventListener('click', () => runClientAction('start', '
 els.qrClientButton.addEventListener('click', openQr);
 els.resetClientButton.addEventListener('click', () => runClientAction('reset', 'Sesion reseteada.').catch((error) => showToast(error.message)));
 els.logoutClientButton.addEventListener('click', () => runClientAction('logout', 'Sesion cerrada.').catch((error) => showToast(error.message)));
+els.deleteMessagesButton.addEventListener('click', () => deleteSelectedClientMessages().catch((error) => showToast(error.message)));
+els.deleteAssociationsButton.addEventListener('click', () => deleteSelectedClientAssociations().catch((error) => showToast(error.message)));
 els.deleteClientButton.addEventListener('click', () => deleteSelectedClient().catch((error) => showToast(error.message)));
 els.sendMessageForm.addEventListener('submit', (event) => sendMessage(event).catch((error) => showToast(error.message)));
 els.linkAliasForm.addEventListener('submit', (event) => linkAlias(event).catch((error) => showToast(error.message)));

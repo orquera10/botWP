@@ -453,6 +453,58 @@ export async function deleteDbClient(clientId) {
   await pool.query('delete from clients where id = $1', [clientId]);
 }
 
+export async function deleteClientMessages(clientId) {
+  if (!pool || !clientId) return { messages: 0, conversations: 0 };
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('begin');
+    const messages = await client.query('delete from messages where client_id = $1', [clientId]);
+    const conversations = await client.query('delete from conversations where client_id = $1', [clientId]);
+    await client.query('commit');
+
+    return {
+      messages: messages.rowCount,
+      conversations: conversations.rowCount
+    };
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteClientAssociations(clientId) {
+  if (!pool || !clientId) return { associations: 0, verificationRequests: 0 };
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('begin');
+    const associations = await client.query(
+      'delete from conversation_aliases where client_id = $1',
+      [clientId]
+    );
+    const verificationRequests = await client.query(
+      'delete from lid_verification_requests where client_id = $1',
+      [clientId]
+    );
+    await client.query('commit');
+
+    return {
+      associations: associations.rowCount,
+      verificationRequests: verificationRequests.rowCount
+    };
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function toMessageDate(value) {
   if (!value) return null;
 

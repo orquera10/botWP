@@ -512,6 +512,16 @@ p {
   background: var(--danger-strong);
 }
 
+.danger-secondary-button {
+  border-color: var(--danger);
+  background: white;
+  color: var(--danger);
+}
+
+.danger-secondary-button:hover {
+  background: #fef2f2;
+}
+
 .alert {
   margin-top: 14px;
   padding: 10px 12px;

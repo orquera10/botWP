@@ -34,6 +34,8 @@ const els = {
   businessApiKeyInput: document.querySelector('#business-api-key-input'),
   businessAdminApiUrlInput: document.querySelector('#business-admin-api-url-input'),
   businessAdminApiKeyInput: document.querySelector('#business-admin-api-key-input'),
+  businessExpedientesApiUrlInput: document.querySelector('#business-expedientes-api-url-input'),
+  businessExpedientesApiKeyInput: document.querySelector('#business-expedientes-api-key-input'),
   businessWelcomeInput: document.querySelector('#business-welcome-input'),
   businessCatalogUrlInput: document.querySelector('#business-catalog-url-input'),
   businessUnregisteredInput: document.querySelector('#business-unregistered-input'),
@@ -263,6 +265,8 @@ function populateBusinessForm(businessId = '') {
     els.businessRegistrationInput.checked = true;
     els.businessAdminAgendaInput.checked = false;
     els.businessExpedientesInput.checked = false;
+    els.businessExpedientesApiUrlInput.value = '';
+    els.businessExpedientesApiKeyInput.value = '';
     els.businessFormMode.textContent = 'Creando un negocio nuevo';
     els.businessFormMode.classList.remove('editing');
     els.businessSubmitButton.textContent = 'Crear negocio';
@@ -282,6 +286,8 @@ function populateBusinessForm(businessId = '') {
   els.businessApiKeyInput.value = '';
   els.businessAdminApiUrlInput.value = business.adminApiUrl || '';
   els.businessAdminApiKeyInput.value = '';
+  els.businessExpedientesApiUrlInput.value = business.expedientesApiUrl || '';
+  els.businessExpedientesApiKeyInput.value = '';
   els.businessWelcomeInput.value = business.settings?.welcomeMessage || '';
   els.businessCatalogUrlInput.value = business.settings?.catalogUrl || '';
   els.businessUnregisteredInput.value = business.settings?.unregisteredMessage || '';
@@ -437,6 +443,8 @@ async function createBusiness(event) {
     apiKey: els.businessApiKeyInput.value.trim(),
     adminApiUrl: els.businessAdminApiUrlInput.value.trim(),
     adminApiKey: els.businessAdminApiKeyInput.value.trim(),
+    expedientesApiUrl: els.businessExpedientesApiUrlInput.value.trim(),
+    expedientesApiKey: els.businessExpedientesApiKeyInput.value.trim(),
     settings: {
       welcomeMessage: els.businessWelcomeInput.value.trim(),
       catalogUrl: els.businessCatalogUrlInput.value.trim(),

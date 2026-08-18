@@ -36,6 +36,8 @@ export async function initDatabase() {
 
     alter table business_profiles add column if not exists admin_api_url text;
     alter table business_profiles add column if not exists admin_api_key text;
+    alter table business_profiles add column if not exists expedientes_api_url text;
+    alter table business_profiles add column if not exists expedientes_api_key text;
 
     create table if not exists app_migrations (
       key text primary key,
@@ -268,6 +270,7 @@ export async function listDbClients() {
     select c.id, c.client_name as "clientName", c.business_id as "businessId",
       b.name as "businessName", b.flow_type as "flowType", b.api_url as "apiUrl", b.api_key as "apiKey",
       b.admin_api_url as "adminApiUrl", b.admin_api_key as "adminApiKey",
+      b.expedientes_api_url as "expedientesApiUrl", b.expedientes_api_key as "expedientesApiKey",
       b.settings,
       coalesce((
         select json_agg(bf.flow_name order by bf.flow_name)
@@ -289,8 +292,10 @@ export async function listBusinessProfiles() {
 
   const result = await pool.query(`
     select id, name, flow_type as "flowType", api_url as "apiUrl", admin_api_url as "adminApiUrl",
+      expedientes_api_url as "expedientesApiUrl",
       (api_key is not null and api_key <> '') as "hasApiKey", settings, enabled,
       (admin_api_key is not null and admin_api_key <> '') as "hasAdminApiKey",
+      (expedientes_api_key is not null and expedientes_api_key <> '') as "hasExpedientesApiKey",
       coalesce((
         select json_agg(bf.flow_name order by bf.flow_name)
         from business_flows bf
@@ -317,6 +322,7 @@ export async function getBusinessProfile(businessId) {
     `
       select id, name, flow_type as "flowType", api_url as "apiUrl", api_key as "apiKey",
         admin_api_url as "adminApiUrl", admin_api_key as "adminApiKey",
+        expedientes_api_url as "expedientesApiUrl", expedientes_api_key as "expedientesApiKey",
         settings, enabled,
         coalesce((
           select json_agg(bf.flow_name order by bf.flow_name)
@@ -339,9 +345,10 @@ export async function saveBusinessProfile(profile) {
   const result = await pool.query(
     `
       insert into business_profiles (
-        id, name, flow_type, api_url, api_key, admin_api_url, admin_api_key, settings, updated_at
+        id, name, flow_type, api_url, api_key, admin_api_url, admin_api_key,
+        expedientes_api_url, expedientes_api_key, settings, updated_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
       on conflict (id) do update set
         name = excluded.name,
         flow_type = excluded.flow_type,
@@ -361,13 +368,24 @@ export async function saveBusinessProfile(profile) {
           when excluded.admin_api_key is null or excluded.admin_api_key = '' then business_profiles.admin_api_key
           else excluded.admin_api_key
         end,
+        expedientes_api_url = case
+          when excluded.expedientes_api_url is null or excluded.expedientes_api_url = '' then business_profiles.expedientes_api_url
+          else excluded.expedientes_api_url
+        end,
+        expedientes_api_key = case
+          when excluded.expedientes_api_key is null or excluded.expedientes_api_key = '' then business_profiles.expedientes_api_key
+          else excluded.expedientes_api_key
+        end,
         settings = excluded.settings,
         enabled = true,
         updated_at = now()
       returning id, name, flow_type as "flowType", api_url as "apiUrl",
         admin_api_url as "adminApiUrl",
+        expedientes_api_url as "expedientesApiUrl",
         (api_key is not null and api_key <> '') as "hasApiKey",
-        (admin_api_key is not null and admin_api_key <> '') as "hasAdminApiKey", settings, enabled
+        (admin_api_key is not null and admin_api_key <> '') as "hasAdminApiKey",
+        (expedientes_api_key is not null and expedientes_api_key <> '') as "hasExpedientesApiKey",
+        settings, enabled
     `,
     [
       profile.id,
@@ -377,6 +395,8 @@ export async function saveBusinessProfile(profile) {
       profile.apiKey || null,
       profile.adminApiUrl || null,
       profile.adminApiKey || null,
+      profile.expedientesApiUrl || null,
+      profile.expedientesApiKey || null,
       JSON.stringify(profile.settings || {})
     ]
   );

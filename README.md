@@ -229,10 +229,11 @@ Configuracion:
 
 1. En el backend de expedientes, definir `EXPEDIENTES_BOT_API_KEY` con una clave larga y redeployar.
 2. En el panel de este bot, crear o editar un negocio y habilitar **Consulta de expedientes**.
-3. En **URL de la API administrativa o de expedientes**, ingresar la URL publica del backend terminada en `/api/bot`.
-4. Guardar la misma clave en **API key administrativa o de expedientes**.
+3. En **Configuracion de expedientes > URL de la API de expedientes**, ingresar la URL publica del backend terminada en `/api/bot`.
+4. Guardar la misma clave en **API key de expedientes**.
 5. En el sistema de expedientes, cargar el telefono de WhatsApp en cada usuario que deba consultar.
-6. Asociar la sesion de WhatsApp con ese negocio y reiniciar la sesion si ya estaba abierta.
+6. En **Nuevo cliente**, elegir el negocio de expedientes y crear el cliente.
+7. Abrir el QR de ese cliente para vincular el numero de WhatsApp. Si la sesion ya estaba abierta, reiniciarla para aplicar el perfil.
 
 La API es de solo lectura y usa el encabezado `X-API-Key`. El bot consulta el telefono antes de cada mensaje y no responde si no pertenece a un usuario habilitado.
 

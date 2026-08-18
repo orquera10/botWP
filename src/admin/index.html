@@ -83,11 +83,20 @@
             <label for="business-api-key-input">API key</label>
             <input id="business-api-key-input" type="password" autocomplete="new-password">
             <p class="field-help">Al editar, dejala vacía para conservar la clave actual.</p>
-            <label for="business-admin-api-url-input">URL de la API administrativa o de expedientes</label>
-            <input id="business-admin-api-url-input" type="url" placeholder="https://api.ejemplo.com/api/bot">
-            <label for="business-admin-api-key-input">API key administrativa o de expedientes</label>
+            <label for="business-admin-api-url-input">URL de la API administrativa</label>
+            <input id="business-admin-api-url-input" type="url" placeholder="https://ejemplo.com/admin_api.php">
+            <label for="business-admin-api-key-input">API key administrativa</label>
             <input id="business-admin-api-key-input" type="password" autocomplete="new-password">
             <p class="field-help">Al editar, dejala vacía para conservar la clave actual.</p>
+            <fieldset class="flow-options">
+              <legend>Configuracion de expedientes</legend>
+              <label for="business-expedientes-api-url-input">URL de la API de expedientes</label>
+              <input id="business-expedientes-api-url-input" type="url" placeholder="https://api.ejemplo.com/api/bot">
+              <label for="business-expedientes-api-key-input">API key de expedientes</label>
+              <input id="business-expedientes-api-key-input" type="password" autocomplete="new-password">
+              <p class="field-help">Debe coincidir con EXPEDIENTES_BOT_API_KEY del backend.</p>
+              <p class="field-help">Guarda el negocio, crea un cliente seleccionandolo y luego vincula el numero de WhatsApp con su QR.</p>
+            </fieldset>
             <label for="business-welcome-input">Saludo de bienvenida</label>
             <textarea id="business-welcome-input" rows="3" placeholder="¡Hola, {name}! Bienvenido a {businessName}."></textarea>
             <p class="field-help">Variables disponibles: {name}, {businessName} y {catalogUrl}.</p>

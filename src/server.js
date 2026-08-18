@@ -217,6 +217,8 @@ function applyBusinessProfile(session, business = defaultBusinessProfile()) {
   session.businessApiKey = business.apiKey || '';
   session.businessAdminApiUrl = business.adminApiUrl || '';
   session.businessAdminApiKey = business.adminApiKey || '';
+  session.businessExpedientesApiUrl = business.expedientesApiUrl || business.adminApiUrl || '';
+  session.businessExpedientesApiKey = business.expedientesApiKey || business.adminApiKey || '';
   session.businessSettings = business.settings || {};
   return session;
 }
@@ -664,8 +666,8 @@ async function connectSession(clientName) {
               ? canonicalConversationJid.split('@')[0].replace(/\D/g, '')
               : '';
             const expedientesApi = createExpedientesApi({
-              baseUrl: session.businessAdminApiUrl,
-              apiKey: session.businessAdminApiKey
+              baseUrl: session.businessExpedientesApiUrl,
+              apiKey: session.businessExpedientesApiKey
             });
             let autorizacion = { autorizado: false };
             let authorizationError = null;
@@ -1342,7 +1344,16 @@ app.get('/', (_req, res) => {
 app.get('/clients', async (_req, res) => {
   if (isDatabaseEnabled()) {
     const clients = await listDbClients();
-    return res.json(clients.map(({ apiKey, apiUrl, adminApiKey, adminApiUrl, settings, ...client }) => client));
+    return res.json(clients.map(({
+      apiKey,
+      apiUrl,
+      adminApiKey,
+      adminApiUrl,
+      expedientesApiKey,
+      expedientesApiUrl,
+      settings,
+      ...client
+    }) => client));
   }
 
   return res.json([...sessions.values()].map(sessionSummary));
@@ -1380,6 +1391,8 @@ app.post('/businesses', adminAuth, async (req, res) => {
   const apiKey = String(req.body.apiKey || '').trim();
   const adminApiUrl = String(req.body.adminApiUrl || '').trim();
   const adminApiKey = String(req.body.adminApiKey || '').trim();
+  const expedientesApiUrl = String(req.body.expedientesApiUrl || '').trim();
+  const expedientesApiKey = String(req.body.expedientesApiKey || '').trim();
   const adminPhones = [...new Set((Array.isArray(req.body.adminPhones) ? req.body.adminPhones : [])
     .map((phone) => String(phone).replace(/\D/g, ''))
     .filter((phone) => phone.length >= 10 && phone.length <= 15))];
@@ -1401,9 +1414,14 @@ app.post('/businesses', adminAuth, async (req, res) => {
     && (!(apiUrl || existingBusiness?.apiUrl) || (!apiKey && !existingBusiness?.apiKey))) {
     return res.status(400).json({ error: 'Reservas y registro necesitan su URL y API key.' });
   }
-  if (flows.some((flow) => ['admin_agenda', 'expedientes'].includes(flow))
+  if (flows.includes('admin_agenda')
     && (!(adminApiUrl || existingBusiness?.adminApiUrl) || (!adminApiKey && !existingBusiness?.adminApiKey))) {
-    return res.status(400).json({ error: 'Los módulos administrativos necesitan su URL y API key.' });
+    return res.status(400).json({ error: 'La agenda administrativa necesita su URL y API key.' });
+  }
+  if (flows.includes('expedientes')
+    && (!(expedientesApiUrl || existingBusiness?.expedientesApiUrl)
+      || (!expedientesApiKey && !existingBusiness?.expedientesApiKey))) {
+    return res.status(400).json({ error: 'La consulta de expedientes necesita su URL y API key.' });
   }
 
   const business = await saveBusinessProfile({
@@ -1415,6 +1433,8 @@ app.post('/businesses', adminAuth, async (req, res) => {
     apiKey,
     adminApiUrl,
     adminApiKey,
+    expedientesApiUrl,
+    expedientesApiKey,
     settings,
     adminPhones
   });

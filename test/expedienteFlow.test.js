@@ -30,3 +30,18 @@ test("informa cuando el expediente no existe", async () => {
   assert.equal(result.state.step, "ask_codigo");
   assert.match(result.replies[0], /No encontré/);
 });
+
+test("confirma cuando el telefono de WhatsApp queda asociado y autorizado", async () => {
+  const result = await handleExpedienteFlow({
+    text: "388 410-4530",
+    expedientesApi: {},
+    justLinkedPhone: true,
+    authorizedUser: { nombre: "Juan" }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.state, null);
+  assert.match(result.replies[0], /Listo, Juan/);
+  assert.match(result.replies[0], /numero quedo asociado y autorizado/i);
+  assert.match(result.replies[0], /expediente/i);
+});

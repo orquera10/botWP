@@ -581,6 +581,7 @@ async function connectSession(clientName) {
         } else {
           await saveIncomingMessage(session, payload);
           let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+          let linkedExpedientesPhone = false;
 
           if (payload.from?.endsWith('@lid')) {
             const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
@@ -595,6 +596,7 @@ async function connectSession(clientName) {
 
               if (shouldLink) {
                 await linkClientAlias(session, payload.from, canonicalJid);
+                linkedExpedientesPhone = true;
                 if (canonicalConversationJid !== canonicalJid) {
                   for (const [flowName, flowState] of [
                     ['registration', registrationState],
@@ -692,7 +694,9 @@ async function connectSession(clientName) {
               const expedienteResult = await handleExpedienteFlow({
                 currentState: expedienteState,
                 text: payload.text,
-                expedientesApi
+                expedientesApi,
+                justLinkedPhone: linkedExpedientesPhone,
+                authorizedUser: autorizacion.usuario
               });
               handledByExpedienteFlow = expedienteResult.handled;
 

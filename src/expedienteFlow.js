@@ -91,10 +91,27 @@ async function consult(key, expedientesApi) {
   }
 }
 
-export async function handleExpedienteFlow({ currentState = null, text, expedientesApi }) {
+export async function handleExpedienteFlow({
+  currentState = null,
+  text,
+  expedientesApi,
+  justLinkedPhone = false,
+  authorizedUser = null
+}) {
   const input = String(text || "").trim();
   const normalized = normalize(input);
   const directKey = parseExpedienteKey(input);
+
+  if (justLinkedPhone) {
+    const name = String(authorizedUser?.nombre || "").trim();
+    return {
+      handled: true,
+      state: null,
+      replies: [
+        `${name ? `Listo, ${name}.` : "Listo."} Tu numero quedo asociado y autorizado.\nEscribi *expediente* para comenzar.`
+      ]
+    };
+  }
 
   if (CANCEL_WORDS.has(normalized)) {
     return { handled: true, state: null, replies: ["Consulta finalizada."] };

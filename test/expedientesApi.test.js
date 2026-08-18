@@ -78,3 +78,50 @@ test("registra una salida con POST y la API key", async () => {
     globalThis.fetch = previousFetch;
   }
 });
+
+test("prepara una entrada identificando al usuario por telefono", async () => {
+  const previousFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return new Response(JSON.stringify({ sector: { sector: "Archivo" } }));
+  };
+  try {
+    const api = createExpedientesApi({ baseUrl: "https://example.com/api/bot", apiKey: "secret" });
+    await api.prepararEntrada({ codigo: "769", numero: 220, anio: 2026, telefono: "5493884104530" });
+    assert.equal(
+      requestedUrl,
+      "https://example.com/api/bot/expedientes/769/220/2026/entrada?telefono=5493884104530"
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("registra una entrada con POST y la API key", async () => {
+  const previousFetch = globalThis.fetch;
+  let request = null;
+  globalThis.fetch = async (url, options) => {
+    request = { url: String(url), options };
+    return new Response(JSON.stringify({ ok: true }), { status: 201 });
+  };
+  try {
+    const api = createExpedientesApi({ baseUrl: "https://example.com/api/bot", apiKey: "secret" });
+    await api.registrarEntrada({
+      codigo: "769",
+      numero: 220,
+      anio: 2026,
+      telefono: "5493884104530",
+      motivo: "Recibido",
+    });
+    assert.equal(request.url, "https://example.com/api/bot/expedientes/769/220/2026/entrada");
+    assert.equal(request.options.method, "POST");
+    assert.equal(request.options.headers["X-API-Key"], "secret");
+    assert.deepEqual(JSON.parse(request.options.body), {
+      telefono: "5493884104530",
+      motivo: "Recibido",
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

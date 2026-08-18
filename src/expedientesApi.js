@@ -14,6 +14,10 @@ function salidaEndpoint(baseUrl, codigo, numero, anio) {
   return `${apiRoot(baseUrl)}/expedientes/${encodeURIComponent(codigo)}/${numero}/${anio}/salida`;
 }
 
+function entradaEndpoint(baseUrl, codigo, numero, anio) {
+  return `${apiRoot(baseUrl)}/expedientes/${encodeURIComponent(codigo)}/${numero}/${anio}/entrada`;
+}
+
 async function request(url, apiKey, { method = "GET", body } = {}) {
   const response = await fetch(url, {
     method,
@@ -95,6 +99,39 @@ export function createExpedientesApi({ baseUrl = "", apiKey = "" } = {}) {
       );
       if (!response.ok) {
         const error = new Error(data.error || `Error registrando salida (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    },
+    async prepararEntrada({ codigo, numero, anio, telefono }) {
+      if (!baseUrl || !apiKey) {
+        throw new Error("Falta configurar la URL o la API key de expedientes.");
+      }
+      const url = new URL(entradaEndpoint(baseUrl, codigo, numero, anio));
+      url.searchParams.set("telefono", telefono);
+      const { response, data } = await request(url.toString(), apiKey);
+      if (!response.ok) {
+        const error = new Error(data.error || `Error preparando entrada (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    },
+    async registrarEntrada({ codigo, numero, anio, telefono, motivo = "" }) {
+      if (!baseUrl || !apiKey) {
+        throw new Error("Falta configurar la URL o la API key de expedientes.");
+      }
+      const { response, data } = await request(
+        entradaEndpoint(baseUrl, codigo, numero, anio),
+        apiKey,
+        {
+          method: "POST",
+          body: { telefono, motivo },
+        }
+      );
+      if (!response.ok) {
+        const error = new Error(data.error || `Error registrando entrada (${response.status}).`);
         error.status = response.status;
         throw error;
       }

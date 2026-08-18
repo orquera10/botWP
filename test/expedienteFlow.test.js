@@ -23,6 +23,7 @@ test("hola muestra el menu de expedientes", async () => {
   assert.match(result.replies[0], /Menú principal/);
   assert.match(result.replies[0], /1.*Consulta de expediente/);
   assert.match(result.replies[0], /2.*Dar salida/);
+  assert.match(result.replies[0], /3.*Dar entrada/);
 });
 
 test("la opcion 1 inicia la consulta guiada", async () => {
@@ -129,6 +130,49 @@ test("da salida a un expediente solo despues de confirmar", async () => {
   assert.equal(result.state.step, "menu");
   assert.match(result.replies[0], /Salida registrada correctamente/);
   assert.match(result.replies[0], /Destino: Archivo/);
+});
+
+test("da entrada a un expediente en el sector del usuario solo despues de confirmar", async () => {
+  let registered = null;
+  const api = {
+    prepararEntrada: async (data) => ({
+      expediente: { codigo: data.codigo, numero: data.numero, anio: data.anio, asunto: "Compra de equipos" },
+      movimientoActual: { estado: "S", origen: "Contaduria", destino: "Archivo" },
+      sector: { codigosector: "30", sector: "Archivo" },
+    }),
+    registrarEntrada: async (data) => {
+      registered = data;
+      return {
+        sector: { sector: "Archivo" },
+        movimiento: { movimiento: 9 },
+      };
+    },
+  };
+  const base = { expedientesApi: api, authorizedPhone: "5493884104530" };
+
+  const menu = await handleExpedienteFlow({ ...base, text: "hola" });
+  const start = await handleExpedienteFlow({ ...base, currentState: menu.state, text: "3" });
+  assert.equal(start.state.step, "ask_entrada_clave");
+
+  const prepared = await handleExpedienteFlow({ ...base, currentState: start.state, text: "769 220 2026" });
+  assert.equal(prepared.state.step, "ask_entrada_motivo");
+  assert.match(prepared.replies[0], /Entrada en: Archivo/);
+
+  const reason = await handleExpedienteFlow({ ...base, currentState: prepared.state, text: "Recibido" });
+  assert.equal(reason.state.step, "confirm_entrada");
+  assert.equal(registered, null);
+
+  const result = await handleExpedienteFlow({ ...base, currentState: reason.state, text: "CONFIRMAR" });
+  assert.deepEqual(registered, {
+    codigo: "769",
+    numero: 220,
+    anio: 2026,
+    telefono: "5493884104530",
+    motivo: "Recibido",
+  });
+  assert.equal(result.state.step, "menu");
+  assert.match(result.replies[0], /Entrada registrada correctamente/);
+  assert.match(result.replies[0], /Sector: Archivo/);
 });
 
 test("informa cuando el expediente no existe", async () => {

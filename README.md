@@ -223,9 +223,11 @@ El webhook incluye `clientId` y `clientName` para que sepas a que cliente perten
 
 ## Consulta de expedientes por WhatsApp
 
-La rama `expedientes` incluye un circuito restringido a telefonos asociados a usuarios habilitados del sistema de expedientes. El menu permite consultar un expediente o darle salida. Para consultar, el usuario puede ingresar codigo, numero y anio paso a paso, o enviar una clave completa como `769-1234-2026`. La respuesta muestra los datos principales y los ultimos tres movimientos habilitados.
+La rama `expedientes` incluye un circuito restringido a telefonos asociados a usuarios habilitados del sistema de expedientes. El menu permite consultar un expediente, darle salida o registrar su entrada en el sector del usuario. Para consultar, el usuario puede ingresar codigo, numero y anio paso a paso, o enviar una clave completa como `769-1234-2026`. La respuesta muestra los datos principales y los ultimos tres movimientos habilitados.
 
 Para dar salida, el bot solicita la clave completa, verifica que el ultimo movimiento sea una entrada disponible en el sector del usuario, muestra los sectores de destino habilitados, pide un motivo opcional y exige responder `CONFIRMAR` antes de registrar el movimiento.
+
+Para dar entrada, solicita la clave completa, comprueba que el ultimo movimiento sea una salida dirigida al sector del usuario, pide un motivo opcional y exige responder `CONFIRMAR` antes de registrar la recepcion.
 
 Configuracion:
 
@@ -237,7 +239,7 @@ Configuracion:
 6. En **Nuevo cliente**, elegir el negocio de expedientes y crear el cliente.
 7. Abrir el QR de ese cliente para vincular el numero de WhatsApp. Si la sesion ya estaba abierta, reiniciarla para aplicar el perfil.
 
-La API usa el encabezado `X-API-Key`. El bot consulta el telefono antes de cada mensaje y no responde si no pertenece a un usuario habilitado. Las salidas vuelven a validar telefono, sector y estado del expediente en el backend antes de escribir en la base.
+La API usa el encabezado `X-API-Key`. El bot consulta el telefono antes de cada mensaje y no responde si no pertenece a un usuario habilitado. Las entradas y salidas vuelven a validar telefono, sector y estado del expediente en el backend antes de escribir en la base.
 
 ## Flujo de reservas por WhatsApp
 

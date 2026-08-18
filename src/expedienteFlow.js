@@ -1,6 +1,6 @@
 const CANCEL_WORDS = new Set(["cancelar", "salir", "fin"]);
 const MENU_WORDS = new Set(["menu", "menú", "hola", "inicio", "expediente", "expedientes", "expte"]);
-const MAIN_MENU_MESSAGE = "📋 *Menú principal*\n\n*1* - Consulta de expediente\n*2* - Dar salida a un expediente\n\nRespondé con el número de opción.";
+const MAIN_MENU_MESSAGE = "📋 *Menú principal*\n\n*1* - Consulta de expediente\n*2* - Dar salida a un expediente\n*3* - Dar entrada a un expediente\n\nRespondé con el número de opción.";
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -161,6 +161,58 @@ async function registerSalida(data, expedientesApi, authorizedPhone) {
   }
 }
 
+function entradaKeyPrompt() {
+  return "📥 *Dar entrada a un expediente*\nIngresá código, número y año juntos.\nPor ejemplo: *769 220 2026*.";
+}
+
+async function prepareEntrada(key, expedientesApi, authorizedPhone) {
+  try {
+    const result = await expedientesApi.prepararEntrada({ ...key, telefono: authorizedPhone });
+    return {
+      handled: true,
+      state: state("ask_entrada_motivo", {
+        key,
+        expediente: result.expediente,
+        movimientoActual: result.movimientoActual,
+        sector: result.sector,
+      }),
+      replies: [
+        `📄 *Expediente ${key.codigo}-${key.numero}/${key.anio}*\n` +
+        `Asunto: ${clean(result.expediente?.asunto)}\n` +
+        `Procedencia: ${clean(result.movimientoActual?.origen)}\n` +
+        `Entrada en: ${clean(result.sector?.sector)}\n\n` +
+        "Escribí el motivo de la entrada o respondé *0* para continuar sin motivo."
+      ]
+    };
+  } catch (error) {
+    return {
+      ...mainMenu([error.message || "No se pudo preparar la entrada del expediente."]),
+      error,
+    };
+  }
+}
+
+async function registerEntrada(data, expedientesApi, authorizedPhone) {
+  try {
+    const result = await expedientesApi.registrarEntrada({
+      ...data.key,
+      telefono: authorizedPhone,
+      motivo: data.motivo,
+    });
+    return mainMenu([
+      `✅ *Entrada registrada correctamente*\n` +
+      `Expediente: ${data.key.codigo}-${data.key.numero}/${data.key.anio}\n` +
+      `Sector: ${clean(result.sector?.sector || data.sector?.sector)}\n` +
+      `Movimiento: ${clean(result.movimiento?.movimiento)}`
+    ]);
+  } catch (error) {
+    return {
+      ...mainMenu([error.message || "No se pudo registrar la entrada del expediente."]),
+      error,
+    };
+  }
+}
+
 export async function handleExpedienteFlow({
   currentState = null,
   text,
@@ -244,6 +296,37 @@ export async function handleExpedienteFlow({
     return mainMenu(["Salida cancelada."]);
   }
 
+  if (currentState.step === "ask_entrada_clave") {
+    if (!directKey) {
+      return { handled: true, state: currentState, replies: [entradaKeyPrompt()] };
+    }
+    return prepareEntrada(directKey, expedientesApi, authorizedPhone);
+  }
+  if (currentState.step === "ask_entrada_motivo") {
+    if (!input) {
+      return { handled: true, state: currentState, replies: ["Ingresá un motivo o respondé *0*."] };
+    }
+    const motivo = input === "0" ? "" : input;
+    const data = { ...currentState.data, motivo };
+    return {
+      handled: true,
+      state: state("confirm_entrada", data),
+      replies: [
+        `⚠️ *Confirmar entrada*\n` +
+        `Expediente: ${data.key.codigo}-${data.key.numero}/${data.key.anio}\n` +
+        `Sector: ${clean(data.sector?.sector)}\n` +
+        `Motivo: ${clean(motivo, "Sin motivo")}\n\n` +
+        "Respondé *CONFIRMAR* para registrar la entrada o *CANCELAR* para volver al menú."
+      ]
+    };
+  }
+  if (currentState.step === "confirm_entrada") {
+    if (normalized === "confirmar") {
+      return registerEntrada(currentState.data, expedientesApi, authorizedPhone);
+    }
+    return mainMenu(["Entrada cancelada."]);
+  }
+
   if (directKey) return consult(directKey, expedientesApi);
 
   if (currentState.step === "menu") {
@@ -261,6 +344,13 @@ export async function handleExpedienteFlow({
         handled: true,
         state: state("ask_salida_clave"),
         replies: [salidaKeyPrompt()]
+      };
+    }
+    if (normalized === "3") {
+      return {
+        handled: true,
+        state: state("ask_entrada_clave"),
+        replies: [entradaKeyPrompt()]
       };
     }
     return mainMenu();

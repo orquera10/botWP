@@ -10,6 +10,35 @@ const sample = {
 test("acepta una clave completa", () => {
   assert.deepEqual(parseExpedienteKey("769-1234-2026"), { codigo: "769", numero: 1234, anio: 2026 });
   assert.deepEqual(parseExpedienteKey("769/1234/2026"), { codigo: "769", numero: 1234, anio: 2026 });
+  assert.deepEqual(parseExpedienteKey("769 220 2026"), { codigo: "769", numero: 220, anio: 2026 });
+  assert.deepEqual(parseExpedienteKey("expediente 769 220 2026"), { codigo: "769", numero: 220, anio: 2026 });
+  assert.deepEqual(parseExpedienteKey("expedientes: 769 220 2026"), { codigo: "769", numero: 220, anio: 2026 });
+});
+
+test("hola muestra el menu de expedientes", async () => {
+  const result = await handleExpedienteFlow({ text: "hola", expedientesApi: {} });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.state.step, "ask_codigo");
+  assert.match(result.replies[0], /Consulta de expedientes/);
+  assert.match(result.replies[0], /769 220 2026/);
+});
+
+test("consulta directamente con los tres datos separados por espacios", async () => {
+  let receivedKey = null;
+  const result = await handleExpedienteFlow({
+    text: "769 220 2026",
+    expedientesApi: {
+      consultar: async (key) => {
+        receivedKey = key;
+        return sample;
+      }
+    }
+  });
+
+  assert.deepEqual(receivedKey, { codigo: "769", numero: 220, anio: 2026 });
+  assert.equal(result.handled, true);
+  assert.equal(result.state.step, "menu");
 });
 
 test("guía código, número y año y consulta la API", async () => {

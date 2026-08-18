@@ -1,5 +1,5 @@
 const CANCEL_WORDS = new Set(["cancelar", "salir", "fin"]);
-const MENU_WORDS = new Set(["menu", "menú", "hola", "inicio", "expediente", "expte"]);
+const MENU_WORDS = new Set(["menu", "menú", "hola", "inicio", "expediente", "expedientes", "expte"]);
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -16,7 +16,11 @@ function parsePositiveInteger(value) {
 }
 
 export function parseExpedienteKey(value) {
-  const match = String(value || "").trim().match(/^([a-zA-Z0-9]+)\s*[-/]\s*(\d+)\s*[-/]\s*(\d{1,4})$/);
+  const input = String(value || "")
+    .trim()
+    .replace(/^(?:expedientes?|expte)\s*[:#-]?\s+/i, "");
+  const separator = "(?:\\s*[-/]\\s*|\\s+)";
+  const match = input.match(new RegExp(`^([a-zA-Z0-9]+)${separator}(\\d+)${separator}(\\d{1,4})$`));
   if (!match) return null;
   return { codigo: match[1], numero: Number(match[2]), anio: Number(match[3]) };
 }
@@ -126,7 +130,7 @@ export async function handleExpedienteFlow({
       handled: true,
       state: state("ask_codigo"),
       replies: [
-        "📂 *Consulta de expedientes*\nIngresá el código del expediente. Por ejemplo: *769*.\n\nTambién podés enviar los datos juntos como *769-1234-2026*.",
+        "📂 *Consulta de expedientes*\nIngresá el código del expediente. Por ejemplo: *769*.\n\nTambién podés enviar los datos juntos como *769 220 2026*.",
       ],
     };
   }

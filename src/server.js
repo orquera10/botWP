@@ -45,6 +45,7 @@ import { createReservasApi } from './wpReservasApi.js';
 import { createExpedientesApi } from './expedientesApi.js';
 import { handleExpedienteFlow } from './expedienteFlow.js';
 import { sessionBusinessProfileFromClient } from './sessionBusinessProfile.js';
+import { isUnlinkedLidConversation } from './lidUtils.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const LEGACY_SESSION_DIR = process.env.SESSION_DIR || 'sessions/whatsapp';
@@ -586,7 +587,7 @@ async function connectSession(clientName) {
           let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
           let linkedExpedientesPhone = false;
 
-          if (payload.from?.endsWith('@lid')) {
+          if (isUnlinkedLidConversation(payload.from, canonicalConversationJid)) {
             const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
             if (canonicalJid) {
               const [registrationState, reservationState] = await Promise.all([

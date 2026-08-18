@@ -570,6 +570,7 @@ export async function shouldAskForLidVerification(clientId, lidJid) {
 
 export async function hasRecentLidVerificationRequest(clientId, lidJid) {
   if (!pool || !clientId || !lidJid?.endsWith('@lid')) return false;
+  if (await isConversationAliasLinked(clientId, lidJid)) return false;
 
   const result = await pool.query(
     `

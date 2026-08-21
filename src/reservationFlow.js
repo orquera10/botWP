@@ -1471,11 +1471,14 @@ async function continueFlow({
       state: null,
       replies: [
         [
-          'Reserva creada. Queda pendiente hasta pagar la seña.',
+          reserva.mercadopago?.init_point
+            ? 'Para confirmar tu reserva, accede al siguiente link y paga la seña:'
+            : 'Tu reserva quedo pendiente de confirmacion.',
+          reserva.mercadopago?.init_point || '',
+          'La reserva se confirmara unicamente cuando se acredite el pago.',
           `Cancha: ${reserva.reserva?.cancha || data.cancha.nombre}`,
           `Fecha: ${displayDate(reserva.reserva?.fecha || data.fecha)}`,
           `Horario: ${reserva.reserva?.hora_inicio || data.slot.inicio} a ${reserva.reserva?.hora_fin || data.slot.fin}`,
-          reserva.mercadopago?.init_point ? `Link de pago: ${reserva.mercadopago.init_point}` : '',
           reserva.mercadopago?.init_point
             ? 'Importante: el link de Mercado Pago permanecera activo durante 10 minutos. Si no realizas el pago dentro de ese plazo, el turno se cancelara automaticamente y tendras que solicitarlo nuevamente.'
             : ''

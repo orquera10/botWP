@@ -1473,11 +1473,11 @@ async function continueFlow({
         [
           reserva.mercadopago?.init_point
             ? 'Para confirmar tu reserva, accede al siguiente link y paga la seña:'
-            : 'Tu reserva quedo pendiente de confirmacion.',
+            : 'Tu reserva quedó pendiente de confirmación.',
           reserva.mercadopago?.init_point || '',
-          'La reserva se confirmara unicamente cuando se acredite el pago.',
+          'La reserva se confirmará únicamente cuando se acredite el pago.',
           reserva.mercadopago?.init_point
-            ? 'Importante: el link de Mercado Pago permanecera activo durante 10 minutos. Si no realizas el pago dentro de ese plazo, el turno se cancelara automaticamente y tendras que solicitarlo nuevamente.'
+            ? 'Importante: el link de Mercado Pago permanecerá activo durante 10 minutos. Si no realizas el pago dentro de ese plazo, el turno se cancelará automáticamente y tendrás que solicitarlo nuevamente.'
             : ''
         ].filter(Boolean).join('\n')
       ]

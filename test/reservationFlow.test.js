@@ -555,7 +555,7 @@ test('advierte que el link de Mercado Pago vence a los 10 minutos', async () => 
   });
 
   assert.equal(result.state, null);
-  assert.match(result.replies[0], /permanecera activo durante 10 minutos/i);
-  assert.match(result.replies[0], /turno se cancelara automaticamente/i);
-  assert.match(result.replies[0], /tendras que solicitarlo nuevamente/i);
+  assert.match(result.replies[0], /permanecerá activo durante 10 minutos/i);
+  assert.match(result.replies[0], /turno se cancelará automáticamente/i);
+  assert.match(result.replies[0], /tendrás que solicitarlo nuevamente/i);
 });

@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { handleRegistrationFlow, handleReservationFlow } from '../src/reservationFlow.js';
+import {
+  buildBirthdayInvitationOfferState,
+  handleRegistrationFlow,
+  handleReservationFlow
+} from '../src/reservationFlow.js';
 import {
   addDaysToIso,
   formatIsoDateForUser,
@@ -558,4 +562,69 @@ test('advierte que el link de Mercado Pago vence a los 10 minutos', async () => 
   assert.match(result.replies[0], /permanecerá activo durante 10 minutos/i);
   assert.match(result.replies[0], /turno se cancelará automáticamente/i);
   assert.match(result.replies[0], /tendrás que solicitarlo nuevamente/i);
+});
+
+test('ofrece personalizar la invitacion despues de confirmar un cumpleanios', async () => {
+  const state = buildBirthdayInvitationOfferState({
+    date: '21-08-2026',
+    startTime: '18:00',
+    endTime: '21:00',
+    phone: '5493886002759'
+  });
+
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state,
+    text: '1',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'birthday_invitation_name');
+  assert.match(result.replies[0], /nombre del cumpleañero/i);
+});
+
+test('si rechaza personalizar envia la plantilla base y el reglamento', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: buildBirthdayInvitationOfferState({
+      date: '21-08-2026',
+      startTime: '18:00',
+      endTime: '21:00',
+      phone: '5493886002759'
+    }),
+    text: 'no',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state, null);
+  assert.deepEqual(result.media.map(media => media.fileName), [
+    'invitacion_cumple_base.png',
+    'reglamento_cancha.png'
+  ]);
+  assert.match(result.afterMediaReplies[0], /wa\.me\/5493886002759/);
+});
+
+test('genera la invitacion personalizada y adjunta la base y el reglamento', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'birthday_invitation_name',
+      data: {
+        date: '21-08-2026',
+        startTime: '18:00',
+        endTime: '21:00',
+        phone: '5493886002759'
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: 'Martina',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state, null);
+  assert.equal(result.media.length, 3);
+  assert.ok(Buffer.isBuffer(result.media[0].buffer));
+  assert.match(result.media[1].fileName, /base/i);
+  assert.equal(result.media[2].fileName, 'reglamento_cancha.png');
+  assert.match(result.afterMediaReplies[0], /wa\.me\/5493886002759/);
 });

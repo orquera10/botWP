@@ -19,6 +19,12 @@ import {
   looksLikeArgentinePhone,
   normalizeArgentinePhone
 } from './phoneUtils.js';
+import {
+  BIRTHDAY_CONTACT_URL,
+  BIRTHDAY_INVITATION_TEMPLATE,
+  BIRTHDAY_RULES_IMAGE,
+  createBirthdayInvitation
+} from './birthdayInvitation.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
 const QUERY_TRIGGER_WORDS = [
@@ -430,6 +436,10 @@ function formatTurnos(turnos) {
 
 function buildState(step, data = {}) {
   return { step, data, updatedAt: new Date().toISOString() };
+}
+
+export function buildBirthdayInvitationOfferState(data) {
+  return buildState('birthday_invitation_offer', data);
 }
 
 function isExpired(state) {
@@ -1010,6 +1020,65 @@ async function continueFlow({
     return {
       state: buildState('main_menu', { pushName, greetingName }),
       replies: [[welcome, userMenuMessage(businessSettings)].join('\n\n')]
+    };
+  }
+
+  if (state.step === 'birthday_invitation_offer') {
+    const answer = normalizeText(text);
+    const accepted = ['1', 'si', 'quiero', 'dale', 'acepto'].includes(answer);
+    const declined = ['2', 'no', 'no gracias'].includes(answer);
+
+    if (accepted) {
+      return {
+        state: buildState('birthday_invitation_name', state.data),
+        replies: ['¿Cuál es el nombre del cumpleañero o cumpleañera?']
+      };
+    }
+
+    if (declined) {
+      return {
+        state: null,
+        replies: ['No hay problema. Te envío la invitación base para que puedas completarla y el reglamento de cumpleaños.'],
+        media: [
+          { path: BIRTHDAY_INVITATION_TEMPLATE, fileName: 'invitacion_cumple_base.png', caption: 'Invitación base' },
+          { path: BIRTHDAY_RULES_IMAGE, fileName: 'reglamento_cancha.png', caption: 'Reglamento para cumpleaños' }
+        ],
+        afterMediaReplies: [`Para dudas específicas, podés comunicarte con nosotros acá:\n${BIRTHDAY_CONTACT_URL}`]
+      };
+    }
+
+    return {
+      state: buildState('birthday_invitation_offer', state.data),
+      replies: ['Respondé 1 si querés una invitación personalizada o 2 si preferís continuar sin personalizarla.']
+    };
+  }
+
+  if (state.step === 'birthday_invitation_name') {
+    const birthdayName = String(text || '').replace(/\s+/g, ' ').trim();
+    if (birthdayName.length < 2 || birthdayName.length > 48) {
+      return {
+        state: buildState('birthday_invitation_name', state.data),
+        replies: ['Escribí un nombre de entre 2 y 48 caracteres para preparar la invitación.']
+      };
+    }
+
+    const invitation = await createBirthdayInvitation({
+      name: birthdayName,
+      date: String(state.data?.date || '').replaceAll('-', '/'),
+      startTime: state.data?.startTime,
+      endTime: state.data?.endTime,
+      phone: state.data?.phone || phoneFromJid(canonicalJid)
+    });
+
+    return {
+      state: null,
+      replies: [`¡Listo! Preparé la invitación personalizada para ${birthdayName}.`],
+      media: [
+        { buffer: invitation, fileName: 'invitacion_personalizada.png', caption: 'Invitación personalizada' },
+        { path: BIRTHDAY_INVITATION_TEMPLATE, fileName: 'invitacion_cumple_base.png', caption: 'Invitación base, por si querés completarla vos' },
+        { path: BIRTHDAY_RULES_IMAGE, fileName: 'reglamento_cancha.png', caption: 'Reglamento para cumpleaños' }
+      ],
+      afterMediaReplies: [`Para dudas específicas, podés comunicarte con nosotros acá:\n${BIRTHDAY_CONTACT_URL}`]
     };
   }
 

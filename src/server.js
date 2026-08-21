@@ -36,7 +36,11 @@ import {
   updateMessageDeliveryStatus,
   upsertClient
 } from './db.js';
-import { handleRegistrationFlow, handleReservationFlow } from './reservationFlow.js';
+import {
+  buildBirthdayInvitationOfferState,
+  handleRegistrationFlow,
+  handleReservationFlow
+} from './reservationFlow.js';
 import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
@@ -316,6 +320,52 @@ async function sendBotText(session, to, text) {
   return result;
 }
 
+async function sendBotImage(session, to, media) {
+  if (!session.sock || session.status !== 'open') return null;
+
+  const image = media.buffer || await fs.readFile(media.path);
+  const caption = String(media.caption || '').trim();
+  const result = await session.sock.sendMessage(to, {
+    image,
+    caption,
+    mimetype: 'image/png',
+    fileName: media.fileName || 'imagen.png'
+  });
+  await saveOutgoingMessage(session, {
+    to,
+    text: caption,
+    result,
+    messageType: 'image'
+  });
+  emitAdminEvent('message:new', {
+    clientId: session.id,
+    direction: 'outgoing',
+    message: {
+      clientId: session.id,
+      clientName: session.clientName,
+      id: result?.key?.id,
+      from: session.sock?.user?.id || null,
+      to,
+      text: caption,
+      messageType: 'image'
+    }
+  });
+
+  return result;
+}
+
+async function sendFlowOutput(session, to, flowResult) {
+  for (const reply of flowResult.replies || []) {
+    await sendBotText(session, to, reply);
+  }
+  for (const media of flowResult.media || []) {
+    await sendBotImage(session, to, media);
+  }
+  for (const reply of flowResult.afterMediaReplies || []) {
+    await sendBotText(session, to, reply);
+  }
+}
+
 function normalizeAliasJid(value) {
   if (!value) return null;
   const raw = String(value).trim();
@@ -530,9 +580,7 @@ async function connectSession(clientName) {
         await saveBotFlowState(session.id, canonicalJid, nextFlow, flowResult.state);
       }
 
-      for (const reply of flowResult.replies || []) {
-        await sendBotText(session, aliasJid, reply);
-      }
+      await sendFlowOutput(session, aliasJid, flowResult);
 
       emitAdminEvent('conversation:update', { clientId: session.id });
       logger.info(
@@ -713,9 +761,7 @@ async function connectSession(clientName) {
               await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
             }
 
-            for (const reply of flowResult.replies || []) {
-              await sendBotText(session, payload.from, reply);
-            }
+            await sendFlowOutput(session, payload.from, flowResult);
 
             if (
               (!flowResult.replies || flowResult.replies.length === 0) &&
@@ -1206,6 +1252,53 @@ async function sendMessageHandler(req, res) {
   }
 }
 
+async function birthdayInvitationHandler(req, res) {
+  const session = req.whatsappSession;
+  if (!session.sock || session.status !== 'open') {
+    return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  }
+  if (!isDatabaseEnabled()) {
+    return res.status(503).json({ error: 'PostgreSQL es necesario para conservar el flujo de la invitación' });
+  }
+
+  const jid = normalizeJid(req.body.to);
+  const date = String(req.body.date || '').trim();
+  const startTime = String(req.body.startTime || '').trim();
+  const endTime = String(req.body.endTime || '').trim();
+  const phone = String(req.body.phone || req.body.to || '').trim();
+  if (!jid || !date || !startTime || !endTime || !phone) {
+    return res.status(400).json({
+      error: 'Faltan datos. Enviá "to", "phone", "date", "startTime" y "endTime".'
+    });
+  }
+  if ([req.body.to, req.body.phone, req.body.date, req.body.startTime, req.body.endTime].some(Array.isArray)) {
+    return res.status(400).json({ error: 'Los datos de la invitación deben ser valores simples.' });
+  }
+
+  const canonicalJid = await getCanonicalConversationJid(session.id, jid);
+  const state = buildBirthdayInvitationOfferState({ date, startTime, endTime, phone });
+  const prompt = [
+    'Tu reserva de cumpleaños ya está confirmada.',
+    '¿Querés que preparemos una invitación personalizada?',
+    '1. Sí',
+    '2. No'
+  ].join('\n');
+
+  await saveBotFlowState(session.id, canonicalJid, 'reservation', state);
+  try {
+    await sendBotText(session, jid, prompt);
+  } catch (error) {
+    await clearBotFlowState(session.id, canonicalJid, 'reservation');
+    logger.error(
+      { clientId: session.id, clientName: session.clientName, jid, error: serializeError(error) },
+      'No se pudo iniciar el flujo de invitación de cumpleaños'
+    );
+    return res.status(500).json({ error: 'No se pudo enviar la propuesta de invitación' });
+  }
+
+  return res.json({ ok: true, clientId: session.id, to: jid });
+}
+
 app.get('/admin', adminAuth, (_req, res) => {
   res.sendFile(path.join(ADMIN_DIR, 'index.html'));
 });
@@ -1251,6 +1344,7 @@ app.get('/', (_req, res) => {
       unlinkedLids: 'GET /clients/:clientName/unlinked-lids',
       conversationMessages: 'GET /clients/:clientName/conversations/:jid/messages',
       send: 'POST /clients/:clientName/send',
+      birthdayInvitation: 'POST /clients/:clientName/birthday-invitation',
       logout: 'POST /clients/:clientName/logout',
       reset: 'POST /clients/:clientName/reset',
       linkAlias: 'POST /clients/:clientName/aliases',
@@ -1428,6 +1522,8 @@ app.get('/clients/:clientName/conversations/:jid/messages', async (req, res) => 
 });
 
 app.post('/clients/:clientName/send', apiAuth, sendMessageHandler);
+
+app.post('/clients/:clientName/birthday-invitation', apiAuth, birthdayInvitationHandler);
 
 app.post('/clients/:clientName/logout', apiAuth, async (req, res) => {
   const session = req.whatsappSession;

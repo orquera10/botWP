@@ -7,12 +7,14 @@ import sharp from 'sharp';
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = path.resolve(MODULE_DIR, '..', 'assets', 'birthday');
 const require = createRequire(import.meta.url);
-const FONT_PATH = path.join(
-  path.dirname(require.resolve('dejavu-fonts-ttf/package.json')),
-  'ttf',
-  'DejaVuSans-Bold.ttf'
+const ANTON_DIR = path.dirname(require.resolve('@fontsource/anton/package.json'));
+const BARLOW_CONDENSED_DIR = path.dirname(require.resolve('@fontsource/barlow-condensed/package.json'));
+const nameFont = opentype.loadSync(
+  path.join(ANTON_DIR, 'files', 'anton-latin-400-normal.woff')
 );
-const invitationFont = opentype.loadSync(FONT_PATH);
+const detailsFont = opentype.loadSync(
+  path.join(BARLOW_CONDENSED_DIR, 'files', 'barlow-condensed-latin-600-normal.woff')
+);
 
 export const BIRTHDAY_INVITATION_TEMPLATE = path.join(ASSETS_DIR, 'invitacion_cumple_01.png');
 export const BIRTHDAY_RULES_IMAGE = path.join(ASSETS_DIR, 'reglamento_cancha.png');
@@ -43,13 +45,23 @@ function invitationNameLines(value) {
 }
 
 function nameFontSize(lines) {
-  const longest = Math.max(...lines.map(line => line.length), 1);
-  return Math.max(34, Math.min(lines.length === 1 ? 72 : 54, Math.floor(940 / longest)));
+  const maximum = lines.length === 1 ? 112 : 76;
+  const widest = Math.max(...lines.map(line => nameFont.getAdvanceWidth(line, maximum)), 1);
+  return Math.max(40, Math.floor(maximum * Math.min(1, 700 / widest)));
 }
 
-function centeredTextPath(text, centerX, baselineY, fontSize) {
-  const width = invitationFont.getAdvanceWidth(text, fontSize);
-  const glyphPath = invitationFont.getPath(text, centerX - (width / 2), baselineY, fontSize);
+function centeredTextPath(font, text, centerX, baselineY, fontSize) {
+  const width = font.getAdvanceWidth(text, fontSize);
+  const glyphPath = font.getPath(text, centerX - (width / 2), baselineY, fontSize);
+  return `<path d="${glyphPath.toPathData(2)}" fill="#111"/>`;
+}
+
+function centeredGlyphPath(font, text, centerX, centerY, fontSize) {
+  const initialPath = font.getPath(text, 0, 0, fontSize);
+  const bounds = initialPath.getBoundingBox();
+  const originX = centerX - ((bounds.x1 + bounds.x2) / 2);
+  const originY = centerY - ((bounds.y1 + bounds.y2) / 2);
+  const glyphPath = font.getPath(text, originX, originY, fontSize);
   return `<path d="${glyphPath.toPathData(2)}" fill="#111"/>`;
 }
 
@@ -69,10 +81,9 @@ export function formatInvitationPhone(value) {
 export async function createBirthdayInvitation({ name, date, startTime, endTime, phone }) {
   const nameLines = invitationNameLines(name);
   const fontSize = nameFontSize(nameLines);
-  const nameStartY = nameLines.length === 1 ? 570 : 535;
-  const lineHeight = Math.round(fontSize * 1.12);
+  const nameCenters = nameLines.length === 1 ? [558] : [520, 590];
   const nameSvg = nameLines
-    .map((line, index) => centeredTextPath(line, 527, nameStartY + (index * lineHeight), fontSize))
+    .map((line, index) => centeredGlyphPath(nameFont, line, 527, nameCenters[index], fontSize))
     .join('');
   const dateText = cleanText(date, 24);
   const timeText = cleanText(endTime ? `${startTime} a ${endTime}` : startTime, 28);
@@ -81,9 +92,9 @@ export async function createBirthdayInvitation({ name, date, startTime, endTime,
   const overlay = Buffer.from(`
     <svg width="1054" height="1492" xmlns="http://www.w3.org/2000/svg">
       ${nameSvg}
-      ${centeredTextPath(dateText, 395, 824, 40)}
-      ${centeredTextPath(timeText, 395, 989, 40)}
-      ${centeredTextPath(phoneText, 395, 1154, 40)}
+      ${centeredTextPath(detailsFont, dateText, 395, 822, 44)}
+      ${centeredTextPath(detailsFont, timeText, 395, 987, 44)}
+      ${centeredTextPath(detailsFont, phoneText, 395, 1152, 44)}
     </svg>
   `);
 

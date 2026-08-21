@@ -1025,8 +1025,8 @@ async function continueFlow({
 
   if (state.step === 'birthday_invitation_offer') {
     const answer = normalizeText(text);
-    const accepted = ['1', 'si', 'quiero', 'dale', 'acepto'].includes(answer);
-    const declined = ['2', 'no', 'no gracias'].includes(answer);
+    const accepted = ['si', 'quiero', 'dale', 'acepto'].includes(answer);
+    const declined = ['no', 'no gracias'].includes(answer);
 
     if (accepted) {
       return {
@@ -1049,7 +1049,7 @@ async function continueFlow({
 
     return {
       state: buildState('birthday_invitation_offer', state.data),
-      replies: ['Respondé 1 si querés una invitación personalizada o 2 si preferís continuar sin personalizarla.']
+      replies: ['Respondé SÍ si querés una invitación personalizada o NO si preferís continuar sin personalizarla.']
     };
   }
 

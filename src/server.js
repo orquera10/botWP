@@ -1277,12 +1277,7 @@ async function birthdayInvitationHandler(req, res) {
 
   const canonicalJid = await getCanonicalConversationJid(session.id, jid);
   const state = buildBirthdayInvitationOfferState({ date, startTime, endTime, phone });
-  const prompt = [
-    'Tu reserva de cumpleaños ya está confirmada.',
-    '¿Querés que preparemos una invitación personalizada?',
-    '1. Sí',
-    '2. No'
-  ].join('\n');
+  const prompt = '¿Querés que preparemos una invitación personalizada para el cumpleaños? Respondé SÍ o NO.';
 
   await saveBotFlowState(session.id, canonicalJid, 'reservation', state);
   try {

@@ -575,7 +575,7 @@ test('ofrece personalizar la invitacion despues de confirmar un cumpleanios', as
   const result = await handleReservationFlow({
     ...baseInput,
     state,
-    text: '1',
+    text: 'sí',
     reservasApi: fakeApi()
   });
 

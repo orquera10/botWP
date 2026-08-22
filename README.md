@@ -259,7 +259,7 @@ El bot:
 - crea la reserva y devuelve el link de pago de Mercado Pago
 - informa que el link de Mercado Pago permanece activo 10 minutos y que, vencido ese plazo sin pago, el turno se cancela y debe solicitarse nuevamente
 - despues de acreditarse la seña de una reserva de cumpleaños, ofrece crear una invitacion personalizada con nombre, fecha, horario y telefono de confirmacion
-- envia la invitacion personalizada, la plantilla base, el reglamento y el contacto `https://wa.me/5493886002759`; las imagenes se encuentran en `assets/birthday`
+- si el cliente acepta, envia la invitacion personalizada, el reglamento y el contacto `https://wa.me/5493886002759`; si rechaza personalizarla, envia la plantilla base, el reglamento y el mismo contacto; las imagenes se encuentran en `assets/birthday`
 - responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno`; combina turnos pasados y futuros, elimina duplicados y muestra hasta 5 reservas ordenadas desde la fecha y hora mas recientes
 - registra clientes nuevos cuando escriben `registrarme` o cuando quieren reservar con un telefono no registrado
 - si el email o nombre ya existen en la API, el endpoint `crear_cliente` puede actualizar/asociar el telefono en vez de crear un duplicado

@@ -604,7 +604,7 @@ test('si rechaza personalizar envia la plantilla base y el reglamento', async ()
   assert.match(result.afterMediaReplies[0], /wa\.me\/5493886002759/);
 });
 
-test('genera la invitacion personalizada y adjunta la base y el reglamento', async () => {
+test('genera la invitacion personalizada y adjunta solamente el reglamento', async () => {
   const result = await handleReservationFlow({
     ...baseInput,
     state: {
@@ -622,9 +622,9 @@ test('genera la invitacion personalizada y adjunta la base y el reglamento', asy
   });
 
   assert.equal(result.state, null);
-  assert.equal(result.media.length, 3);
+  assert.equal(result.media.length, 2);
   assert.ok(Buffer.isBuffer(result.media[0].buffer));
-  assert.match(result.media[1].fileName, /base/i);
-  assert.equal(result.media[2].fileName, 'reglamento_cancha.png');
+  assert.equal(result.media[1].fileName, 'reglamento_cancha.png');
+  assert.ok(result.media.every(media => !/base/i.test(media.fileName)));
   assert.match(result.afterMediaReplies[0], /wa\.me\/5493886002759/);
 });

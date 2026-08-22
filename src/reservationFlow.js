@@ -1075,7 +1075,6 @@ async function continueFlow({
       replies: [`¡Listo! Preparé la invitación personalizada para ${birthdayName}.`],
       media: [
         { buffer: invitation, fileName: 'invitacion_personalizada.png', caption: 'Invitación personalizada' },
-        { path: BIRTHDAY_INVITATION_TEMPLATE, fileName: 'invitacion_cumple_base.png', caption: 'Invitación base, por si querés completarla vos' },
         { path: BIRTHDAY_RULES_IMAGE, fileName: 'reglamento_cancha.png', caption: 'Reglamento para cumpleaños' }
       ],
       afterMediaReplies: [`Para dudas específicas, podés comunicarte con nosotros acá:\n${BIRTHDAY_CONTACT_URL}`]

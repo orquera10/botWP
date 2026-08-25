@@ -269,6 +269,63 @@ function formatSlotsForAvailability(slots) {
     .join('\n');
 }
 
+function formatAlternativeSlots(slots) {
+  return slots
+    .map((slot, index) => `${index + 1}. ${slot.cancha.nombre} - ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
+    .concat('0. Volver')
+    .join('\n');
+}
+
+function parseRequestedTime(text) {
+  const match = String(text || '').match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\b/);
+  if (!match) return '';
+  return `${String(Number(match[1])).padStart(2, '0')}:${match[2] || '00'}`;
+}
+
+function isCompatibleAlternativeCourt(selectedCourt, alternativeCourt) {
+  const selectedFixedDuration = Number(selectedCourt?.duracion_fija || 0);
+  const alternativeFixedDuration = Number(alternativeCourt?.duracion_fija || 0);
+
+  if (selectedFixedDuration > 0) {
+    return alternativeFixedDuration === selectedFixedDuration;
+  }
+
+  return alternativeFixedDuration === 0;
+}
+
+async function findAlternativeSlots(data, requestedStartTime = '') {
+  const canchas = Array.isArray(data.canchas) && data.canchas.length
+    ? data.canchas
+    : await listarCanchas();
+  const alternatives = canchas.filter((cancha) =>
+    String(cancha.id) !== String(data.cancha?.id)
+    && isCompatibleAlternativeCourt(data.cancha, cancha)
+  );
+
+  const results = await Promise.allSettled(alternatives.map(async (cancha) => {
+    const slots = await consultarDisponibilidad({
+      fecha: data.fecha,
+      cancha: cancha.id,
+      duracion: data.duracion
+    });
+    return slots
+      .filter((slot) => !requestedStartTime || slot.inicio === requestedStartTime)
+      .map((slot) => ({ ...slot, cancha }));
+  }));
+
+  return results
+    .filter((result) => result.status === 'fulfilled')
+    .flatMap((result) => result.value)
+    .sort((left, right) => String(left.inicio).localeCompare(String(right.inicio))
+      || String(left.cancha.nombre).localeCompare(String(right.cancha.nombre)));
+}
+
+function isAvailabilityConflict(error) {
+  const message = normalizeText(error?.message || '');
+  return error?.status === 409
+    || /dispon|ocupad|ya fue reservad|horario.*reservad|turno.*tomad/.test(message);
+}
+
 function userMenuMessage(_businessSettings = {}, intro = '') {
   const menu = [
     '¿Que queres hacer?',
@@ -344,6 +401,19 @@ function goBack(state, businessSettings = {}) {
     return {
       state: buildState('ask_fecha', data),
       replies: [dateRequestMessage('Volvamos a la fecha.', 'Tambien podes escribir "volver".')]
+    };
+  }
+
+  if (state.step === 'ask_alternative_slot') {
+    if (data.slots?.length) {
+      return {
+        state: buildState('ask_slot', data),
+        replies: [`Volvamos a los horarios de ${data.cancha?.nombre}:\n${formatSlots(data.slots)}`]
+      };
+    }
+    return {
+      state: buildState('ask_fecha', data),
+      replies: [dateRequestMessage('Volvamos a elegir la fecha.', 'Tambien podes escribir "volver".')]
     };
   }
 
@@ -897,6 +967,18 @@ async function askDisponibilidad(data) {
   });
 
   if (!slots.length) {
+    const alternativeSlots = await findAlternativeSlots(data);
+    if (alternativeSlots.length) {
+      return {
+        state: buildState('ask_alternative_slot', { ...data, slots, alternativeSlots }),
+        replies: [[
+          `No hay horarios disponibles en ${data.cancha.nombre} para el ${displayDate(data.fecha)}.`,
+          'Encontré estos turnos en otras canchas:',
+          formatAlternativeSlots(alternativeSlots)
+        ].join('\n')]
+      };
+    }
+
     return {
       state: buildState('ask_fecha', data),
       replies: [dateRequestMessage('No veo horarios disponibles para esa fecha. Pasame otra fecha.')]
@@ -1426,6 +1508,20 @@ async function continueFlow({
   if (state.step === 'ask_slot') {
     const slot = parseChoice(text, data.slots || [], 'label');
     if (!slot) {
+      const requestedStartTime = parseRequestedTime(text);
+      if (requestedStartTime) {
+        const alternativeSlots = await findAlternativeSlots(data, requestedStartTime);
+        if (alternativeSlots.length) {
+          return {
+            state: buildState('ask_alternative_slot', { ...data, alternativeSlots }),
+            replies: [[
+              `Ese horario no está disponible en ${data.cancha.nombre}.`,
+              `Para las ${requestedStartTime} encontré estas opciones en otras canchas:`,
+              formatAlternativeSlots(alternativeSlots)
+            ].join('\n')]
+          };
+        }
+      }
       return { state, replies: [`Esa no es una de las opciones. Los horarios disponibles son:\n${formatSlots(data.slots || [])}`] };
     }
 
@@ -1458,6 +1554,52 @@ async function continueFlow({
 
     return {
       state: buildState('ask_terms', { ...data, slot, terminos }),
+      replies: [compactTerms(terminos), termsAcceptancePrompt()]
+    };
+  }
+
+  if (state.step === 'ask_alternative_slot') {
+    const alternative = parseChoice(text, data.alternativeSlots || [], 'label');
+    if (!alternative) {
+      return {
+        state,
+        replies: [`Esa no es una de las opciones. Los turnos alternativos son:\n${formatAlternativeSlots(data.alternativeSlots || [])}`]
+      };
+    }
+
+    const selectedData = {
+      ...data,
+      cancha: alternative.cancha,
+      slot: alternative,
+      slots: [alternative],
+      alternativeSlots: undefined
+    };
+    const phone = data.phone || phoneFromJid(canonicalJid);
+    if (data.availabilityOnly || data.deferRegistration) {
+      if (!phone) {
+        return {
+          state: buildState('ask_phone', {
+            ...selectedData,
+            pushName,
+            intent: 'reservation_after_availability'
+          }),
+          replies: [phoneRequestMessage('completar la reserva')]
+        };
+      }
+      return continueSelectedAvailability({
+        data: selectedData,
+        phone,
+        pushName,
+        registrationAvailable
+      });
+    }
+
+    const terminos = await listarTerminos({
+      tipo: Number(alternative.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
+      cancha: alternative.cancha?.id
+    });
+    return {
+      state: buildState('ask_terms', { ...selectedData, terminos }),
       replies: [compactTerms(terminos), termsAcceptancePrompt()]
     };
   }
@@ -1522,18 +1664,36 @@ async function continueFlow({
       };
     }
 
-    const reserva = await crearReserva({
-      cliente: {
-        nombre: data.nombre,
-        email: data.email,
-        telefono: data.phone || phoneFromJid(canonicalJid)
-      },
-      fecha: data.slot.fecha,
-      hora_inicio: data.slot.inicio,
-      cancha: data.cancha.id,
-      duracion: data.duracion,
-      acepta_terminos: true
-    });
+    let reserva;
+    try {
+      reserva = await crearReserva({
+        cliente: {
+          nombre: data.nombre,
+          email: data.email,
+          telefono: data.phone || phoneFromJid(canonicalJid)
+        },
+        fecha: data.slot.fecha,
+        hora_inicio: data.slot.inicio,
+        cancha: data.cancha.id,
+        duracion: data.duracion,
+        acepta_terminos: true
+      });
+    } catch (error) {
+      if (isAvailabilityConflict(error)) {
+        const alternativeSlots = await findAlternativeSlots(data, data.slot.inicio);
+        if (alternativeSlots.length) {
+          return {
+            state: buildState('ask_alternative_slot', { ...data, alternativeSlots }),
+            replies: [[
+              `El horario de las ${data.slot.inicio} acaba de ocuparse en ${data.cancha.nombre}.`,
+              'Está disponible en estas otras canchas:',
+              formatAlternativeSlots(alternativeSlots)
+            ].join('\n')]
+          };
+        }
+      }
+      throw error;
+    }
 
     return {
       state: null,

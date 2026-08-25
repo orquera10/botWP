@@ -522,6 +522,145 @@ test('acepta dd/mm/aaaa, dd/mm, hoy y mañana', async (t) => {
   }
 });
 
+test('si una cancha no tiene turnos ofrece los disponibles en otras canchas', async () => {
+  const fecha = todayIsoInBusinessTimeZone();
+  const canchas = [
+    { id: 1, nombre: 'Cancha 1' },
+    { id: 2, nombre: 'Cancha 2' }
+  ];
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_fecha',
+      data: { cancha: canchas[0], canchas, duracion: 1 },
+      updatedAt: new Date().toISOString()
+    },
+    text: formatIsoDateForUser(fecha),
+    reservasApi: fakeApi({
+      consultarDisponibilidad: async ({ cancha }) => cancha === 2
+        ? [{ fecha, inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }]
+        : []
+    })
+  });
+
+  assert.equal(result.state?.step, 'ask_alternative_slot');
+  assert.equal(result.state?.data?.alternativeSlots[0]?.cancha?.id, 2);
+  assert.match(result.replies[0], /Cancha 2 - 18:00 a 19:00/i);
+});
+
+test('si escribe un horario no disponible busca el mismo horario en otra cancha', async () => {
+  const fecha = todayIsoInBusinessTimeZone();
+  const canchas = [
+    { id: 1, nombre: 'Cancha 1' },
+    { id: 2, nombre: 'Cancha 2' },
+    { id: 3, nombre: 'Cumpleaños', duracion_fija: 3 }
+  ];
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_slot',
+      data: {
+        cancha: canchas[0],
+        canchas,
+        fecha,
+        duracion: 1,
+        slots: [{ fecha, inicio: '19:00', fin: '20:00', label: '19:00 a 20:00' }]
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: '18:00',
+    reservasApi: fakeApi({
+      consultarDisponibilidad: async ({ cancha }) => cancha === 2
+        ? [
+            { fecha, inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' },
+            { fecha, inicio: '20:00', fin: '21:00', label: '20:00 a 21:00' }
+          ]
+        : [{ fecha, inicio: '18:00', fin: '21:00', label: '18:00 a 21:00' }]
+    })
+  });
+
+  assert.equal(result.state?.step, 'ask_alternative_slot');
+  assert.equal(result.state?.data?.alternativeSlots.length, 1);
+  assert.equal(result.state?.data?.alternativeSlots[0]?.cancha?.id, 2);
+  assert.match(result.replies[0], /Para las 18:00/i);
+});
+
+test('al elegir un turno alternativo continua la reserva con la nueva cancha', async () => {
+  const fecha = todayIsoInBusinessTimeZone();
+  const canchaOriginal = { id: 1, nombre: 'Cancha 1' };
+  const canchaAlternativa = { id: 2, nombre: 'Cancha 2' };
+  let termsCourt = null;
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_alternative_slot',
+      data: {
+        cancha: canchaOriginal,
+        canchas: [canchaOriginal, canchaAlternativa],
+        fecha,
+        duracion: 1,
+        alternativeSlots: [{
+          fecha,
+          inicio: '18:00',
+          fin: '19:00',
+          label: '18:00 a 19:00',
+          cancha: canchaAlternativa
+        }]
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: '1',
+    reservasApi: fakeApi({
+      listarTerminos: async ({ cancha }) => {
+        termsCourt = cancha;
+        return ['Cuidar las instalaciones'];
+      }
+    })
+  });
+
+  assert.equal(result.state?.step, 'ask_terms');
+  assert.equal(result.state?.data?.cancha?.id, 2);
+  assert.equal(termsCourt, 2);
+});
+
+test('si el turno se ocupa al confirmar ofrece el mismo horario en otra cancha', async () => {
+  const fecha = todayIsoInBusinessTimeZone();
+  const canchas = [
+    { id: 1, nombre: 'Cancha 1' },
+    { id: 2, nombre: 'Cancha 2' }
+  ];
+  const conflict = new Error('El horario ya no está disponible');
+  conflict.status = 409;
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_confirm',
+      data: {
+        phone: '5493884104530',
+        nombre: 'Juan Perez',
+        email: 'juan@example.com',
+        cancha: canchas[0],
+        canchas,
+        fecha,
+        duracion: 1,
+        slot: { fecha, inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: 'si',
+    reservasApi: fakeApi({
+      crearReserva: async () => { throw conflict; },
+      consultarDisponibilidad: async ({ cancha }) => cancha === 2
+        ? [{ fecha, inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }]
+        : []
+    })
+  });
+
+  assert.equal(result.state?.step, 'ask_alternative_slot');
+  assert.match(result.replies[0], /acaba de ocuparse/i);
+  assert.match(result.replies[0], /Cancha 2/i);
+});
+
 test('advierte que el link de Mercado Pago vence a los 10 minutos', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

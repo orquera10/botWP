@@ -261,6 +261,7 @@ El bot:
 - despues de acreditarse la seña de una reserva de cumpleaños, solicita directamente el nombre del cumpleañero para crear una invitacion personalizada con nombre, fecha, horario y telefono de confirmacion
 - envia la invitacion personalizada, el reglamento y el contacto `https://wa.me/5493886002759`; las imagenes se encuentran en `assets/birthday`
 - responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno`; combina turnos pasados y futuros, elimina duplicados y muestra hasta 5 reservas ordenadas desde la fecha y hora mas recientes
+- si la cancha elegida no tiene disponibilidad, el horario solicitado no aparece o se ocupa antes de confirmar, consulta las otras canchas compatibles y ofrece alternativas para la misma fecha y duracion
 - registra clientes nuevos cuando escriben `registrarme` o cuando quieren reservar con un telefono no registrado
 - si el email o nombre ya existen en la API, el endpoint `crear_cliente` puede actualizar/asociar el telefono en vez de crear un duplicado
 

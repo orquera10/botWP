@@ -282,6 +282,11 @@ function parseRequestedTime(text) {
   return `${String(Number(match[1])).padStart(2, '0')}:${match[2] || '00'}`;
 }
 
+function timeToMinutes(value) {
+  const match = String(value || '').match(/^(\d{2}):(\d{2})$/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : Number.POSITIVE_INFINITY;
+}
+
 function isCompatibleAlternativeCourt(selectedCourt, alternativeCourt) {
   const selectedFixedDuration = Number(selectedCourt?.duracion_fija || 0);
   const alternativeFixedDuration = Number(alternativeCourt?.duracion_fija || 0);
@@ -397,6 +402,13 @@ function goBack(state, businessSettings = {}) {
     };
   }
 
+  if (state.step === 'ask_start_time') {
+    return {
+      state: buildState('ask_fecha', data),
+      replies: [dateRequestMessage('Volvamos a elegir la fecha.', 'Tambien podes escribir "volver".')]
+    };
+  }
+
   if (state.step === 'ask_slot') {
     return {
       state: buildState('ask_fecha', data),
@@ -405,6 +417,12 @@ function goBack(state, businessSettings = {}) {
   }
 
   if (state.step === 'ask_alternative_slot') {
+    if (data.availabilitySearch) {
+      return {
+        state: buildState('ask_start_time', data),
+        replies: ['¿A qué hora querés comenzar? Por ejemplo: 18:00. Para cambiar la fecha, escribí "volver".']
+      };
+    }
     if (data.slots?.length) {
       return {
         state: buildState('ask_slot', data),
@@ -960,47 +978,50 @@ async function startQueryFlow({
 }
 
 async function askDisponibilidad(data) {
-  const slots = await consultarDisponibilidad({
+  const currentSlots = await consultarDisponibilidad({
     fecha: data.fecha,
     cancha: data.cancha.id,
     duracion: data.duracion
   });
+  const alternativeSlots = await findAlternativeSlots(data);
+  const allSlots = [
+    ...currentSlots.map((slot) => ({ ...slot, cancha: data.cancha })),
+    ...alternativeSlots
+  ];
+  const exactSlots = allSlots.filter((slot) => slot.inicio === data.requestedStartTime);
 
-  if (!slots.length) {
-    const alternativeSlots = await findAlternativeSlots(data);
-    if (alternativeSlots.length) {
-      return {
-        state: buildState('ask_alternative_slot', { ...data, slots, alternativeSlots }),
-        replies: [[
-          `No hay horarios disponibles en ${data.cancha.nombre} para el ${displayDate(data.fecha)}.`,
-          'Encontré estos turnos en otras canchas:',
-          formatAlternativeSlots(alternativeSlots)
-        ].join('\n')]
-      };
-    }
-
+  if (!allSlots.length) {
     return {
       state: buildState('ask_fecha', data),
       replies: [dateRequestMessage('No veo horarios disponibles para esa fecha. Pasame otra fecha.')]
     };
   }
 
-  if (data.availabilityOnly) {
-    return {
-      state: buildState('ask_availability_reserve', { ...data, slots }),
-      replies: [[
-        `Estos horarios estan disponibles para el ${displayDate(data.fecha)}:`,
-        formatSlotsForAvailability(slots),
-        '¿Queres reservar uno de estos horarios?',
-        '1. Si, reservar',
-        '2. No, volver al menu'
-      ].join('\n')]
-    };
-  }
+  const requestedMinutes = timeToMinutes(data.requestedStartTime);
+  const options = (exactSlots.length ? exactSlots : allSlots)
+    .sort((left, right) => {
+      const leftDistance = Math.abs(timeToMinutes(left.inicio) - requestedMinutes);
+      const rightDistance = Math.abs(timeToMinutes(right.inicio) - requestedMinutes);
+      return leftDistance - rightDistance
+        || String(left.inicio).localeCompare(String(right.inicio))
+        || String(left.cancha.nombre).localeCompare(String(right.cancha.nombre));
+    })
+    .slice(0, 8);
 
   return {
-    state: buildState('ask_slot', { ...data, slots }),
-    replies: [`Estos horarios estan disponibles. Responde con el numero:\n${formatSlots(slots)}`]
+    state: buildState('ask_alternative_slot', {
+      ...data,
+      availabilitySearch: true,
+      slots: [],
+      alternativeSlots: options
+    }),
+    replies: [[
+      exactSlots.length
+        ? `Encontré estos turnos para comenzar a las ${data.requestedStartTime}:`
+        : `No hay turnos que comiencen a las ${data.requestedStartTime}. Estos son los horarios más cercanos:`,
+      formatAlternativeSlots(options),
+      'Respondé con el número del turno que querés reservar.'
+    ].join('\n')]
   };
 }
 
@@ -1502,7 +1523,22 @@ async function continueFlow({
       };
     }
 
-    return askDisponibilidad({ ...data, fecha });
+    return {
+      state: buildState('ask_start_time', { ...data, fecha }),
+      replies: ['¿A qué hora querés comenzar? Por ejemplo: 18:00. Para cambiar la fecha, escribí "volver".']
+    };
+  }
+
+  if (state.step === 'ask_start_time') {
+    const requestedStartTime = parseRequestedTime(text);
+    if (!requestedStartTime) {
+      return {
+        state,
+        replies: ['No pude reconocer esa hora. Escribila, por ejemplo, como 18:00. Para cambiar la fecha, escribí "volver".']
+      };
+    }
+
+    return askDisponibilidad({ ...data, requestedStartTime });
   }
 
   if (state.step === 'ask_slot') {

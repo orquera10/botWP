@@ -128,10 +128,13 @@ test('la opcion 1 posterga el registro hasta despues de elegir el horario', asyn
   const court = await handleReservationFlow({ ...baseInput, state: started.state, text: '1', reservasApi: api });
   const duration = await handleReservationFlow({ ...baseInput, state: court.state, text: '1', reservasApi: api });
   const date = await handleReservationFlow({ ...baseInput, state: duration.state, text: 'hoy', reservasApi: api });
-  assert.equal(date.state?.step, 'ask_slot');
+  assert.equal(date.state?.step, 'ask_start_time');
   assert.doesNotMatch(date.replies[0], /registr/i);
 
-  const selected = await handleReservationFlow({ ...baseInput, state: date.state, text: '1', reservasApi: api });
+  const availability = await handleReservationFlow({ ...baseInput, state: date.state, text: '18:00', reservasApi: api });
+  assert.equal(availability.state?.step, 'ask_alternative_slot');
+
+  const selected = await handleReservationFlow({ ...baseInput, state: availability.state, text: '1', reservasApi: api });
   assert.equal(selected.state?.step, 'ask_phone');
   assert.equal(selected.state?.data?.intent, 'reservation_after_availability');
   assert.equal(selected.state?.data?.slot?.inicio, '18:00');
@@ -260,7 +263,7 @@ test('mis reservas combina turnos pasados y futuros y muestra primero el mas rec
   assert.ok(result.replies[0].indexOf('Cancha Nueva') < result.replies[0].indexOf('Cancha Anterior'));
 });
 
-test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reservar', async () => {
+test('la opcion 2 pregunta la hora y permite elegir un turno sin pedir datos antes', async () => {
   const canchas = [{ id: 1, nombre: 'Cancha 1' }];
   const slots = [{ fecha: todayIsoInBusinessTimeZone(), inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }];
   const api = fakeApi({
@@ -279,15 +282,23 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
 
   const court = await handleReservationFlow({ ...baseInput, state: started.state, text: '1', reservasApi: api });
   const duration = await handleReservationFlow({ ...baseInput, state: court.state, text: '1', reservasApi: api });
-  const availability = await handleReservationFlow({
+  const startTime = await handleReservationFlow({
     ...baseInput,
     state: duration.state,
     text: 'hoy',
     reservasApi: api
   });
+  assert.equal(startTime.state?.step, 'ask_start_time');
+  assert.match(startTime.replies[0], /a qué hora querés comenzar/i);
 
-  assert.equal(availability.state?.step, 'ask_availability_reserve');
-  assert.match(availability.replies[0], /¿Queres reservar uno de estos horarios\?/i);
+  const availability = await handleReservationFlow({
+    ...baseInput,
+    state: startTime.state,
+    text: '18:00',
+    reservasApi: api
+  });
+  assert.equal(availability.state?.step, 'ask_alternative_slot');
+  assert.match(availability.replies[0], /comenzar a las 18:00/i);
   assert.doesNotMatch(availability.replies[0], /numero de contacto/i);
 
   const accepted = await handleReservationFlow({
@@ -297,8 +308,7 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
     reservasApi: api
   });
   assert.equal(accepted.state?.step, 'ask_phone');
-  assert.equal(accepted.state?.data?.intent, 'availability_registration_check');
-  assert.match(accepted.replies[0], /verificar si ya estas registrado/i);
+  assert.equal(accepted.state?.data?.intent, 'reservation_after_availability');
   assert.match(accepted.replies[0], /Pasame tu numero de telefono/i);
 
   const registrationApi = fakeApi({
@@ -317,7 +327,7 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
   });
   assert.equal(identified.targetFlow, 'registration');
   assert.equal(identified.state?.step, 'ask_register_email');
-  assert.match(identified.replies[0], /Para continuar con la reserva tenes que registrarte/i);
+  assert.match(identified.replies[0], /Para terminar la reserva te tengo que registrar/i);
   assert.match(identified.replies[0], /pasame tu correo electronico/i);
 
   const emailed = await handleRegistrationFlow({
@@ -336,21 +346,10 @@ test('la opcion 2 consulta disponibilidad sin pedir datos y luego ofrece reserva
     reservasApi: registrationApi
   });
   assert.equal(registered.targetFlow, 'reservation');
-  assert.equal(registered.state?.step, 'ask_slot');
-
-  const selected = await handleReservationFlow({
-    ...baseInput,
-    state: registered.state,
-    text: '1',
-    reservasApi: registrationApi
-  });
-  assert.equal(selected.state?.step, 'ask_terms');
-  assert.equal(selected.state?.data?.slot?.inicio, '18:00');
-  assert.equal(selected.replies.length, 2);
-  assert.match(selected.replies[0], /Terminos y condiciones/i);
-  assert.doesNotMatch(selected.replies[0], /SI ACEPTO/i);
-  assert.match(selected.replies[1], /SI ACEPTO/i);
-  assert.doesNotMatch(selected.replies[1], /La seña confirma el turno/i);
+  assert.equal(registered.state?.step, 'ask_terms');
+  assert.equal(registered.state?.data?.slot?.inicio, '18:00');
+  assert.match(registered.replies.join('\n'), /Terminos y condiciones/i);
+  assert.match(registered.replies.join('\n'), /SI ACEPTO/i);
 });
 
 test('si el telefono no existe pero el email si, asocia el telefono sin pedir nombre', async () => {
@@ -494,7 +493,6 @@ test('acepta dd/mm/aaaa, dd/mm, hoy y mañana', async (t) => {
 
   for (const [input, expected] of cases) {
     await t.test(input, async () => {
-      let requestedDate = '';
       const result = await handleReservationFlow({
         ...baseInput,
         state: {
@@ -508,27 +506,22 @@ test('acepta dd/mm/aaaa, dd/mm, hoy y mañana', async (t) => {
         },
         text: input,
         canonicalJid: '5493884104530@s.whatsapp.net',
-        reservasApi: fakeApi({
-          consultarDisponibilidad: async ({ fecha }) => {
-            requestedDate = fecha;
-            return [{ fecha, inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }];
-          }
-        })
+        reservasApi: fakeApi()
       });
 
-      assert.equal(requestedDate, expected);
-      assert.equal(result.state?.step, 'ask_slot');
+      assert.equal(result.state?.data?.fecha, expected);
+      assert.equal(result.state?.step, 'ask_start_time');
     });
   }
 });
 
-test('si una cancha no tiene turnos ofrece los disponibles en otras canchas', async () => {
+test('despues de la fecha pregunta la hora y ofrece otra cancha disponible', async () => {
   const fecha = todayIsoInBusinessTimeZone();
   const canchas = [
     { id: 1, nombre: 'Cancha 1' },
     { id: 2, nombre: 'Cancha 2' }
   ];
-  const result = await handleReservationFlow({
+  const startTime = await handleReservationFlow({
     ...baseInput,
     state: {
       step: 'ask_fecha',
@@ -536,6 +529,14 @@ test('si una cancha no tiene turnos ofrece los disponibles en otras canchas', as
       updatedAt: new Date().toISOString()
     },
     text: formatIsoDateForUser(fecha),
+    reservasApi: fakeApi()
+  });
+  assert.equal(startTime.state?.step, 'ask_start_time');
+
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: startTime.state,
+    text: '18:00',
     reservasApi: fakeApi({
       consultarDisponibilidad: async ({ cancha }) => cancha === 2
         ? [{ fecha, inicio: '18:00', fin: '19:00', label: '18:00 a 19:00' }]
@@ -546,6 +547,31 @@ test('si una cancha no tiene turnos ofrece los disponibles en otras canchas', as
   assert.equal(result.state?.step, 'ask_alternative_slot');
   assert.equal(result.state?.data?.alternativeSlots[0]?.cancha?.id, 2);
   assert.match(result.replies[0], /Cancha 2 - 18:00 a 19:00/i);
+});
+
+test('si no existe la hora solicitada muestra primero los horarios mas cercanos', async () => {
+  const fecha = todayIsoInBusinessTimeZone();
+  const cancha = { id: 1, nombre: 'Cancha 1' };
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_start_time',
+      data: { cancha, canchas: [cancha], fecha, duracion: 1 },
+      updatedAt: new Date().toISOString()
+    },
+    text: '18:00',
+    reservasApi: fakeApi({
+      consultarDisponibilidad: async () => [
+        { fecha, inicio: '21:00', fin: '22:00', label: '21:00 a 22:00' },
+        { fecha, inicio: '19:00', fin: '20:00', label: '19:00 a 20:00' },
+        { fecha, inicio: '16:00', fin: '17:00', label: '16:00 a 17:00' }
+      ]
+    })
+  });
+
+  assert.equal(result.state?.step, 'ask_alternative_slot');
+  assert.match(result.replies[0], /horarios más cercanos/i);
+  assert.ok(result.replies[0].indexOf('19:00 a 20:00') < result.replies[0].indexOf('16:00 a 17:00'));
 });
 
 test('si escribe un horario no disponible busca el mismo horario en otra cancha', async () => {

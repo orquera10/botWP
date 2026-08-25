@@ -37,7 +37,7 @@ import {
   upsertClient
 } from './db.js';
 import {
-  buildBirthdayInvitationOfferState,
+  buildBirthdayInvitationNameState,
   handleRegistrationFlow,
   handleReservationFlow
 } from './reservationFlow.js';
@@ -1276,8 +1276,8 @@ async function birthdayInvitationHandler(req, res) {
   }
 
   const canonicalJid = await getCanonicalConversationJid(session.id, jid);
-  const state = buildBirthdayInvitationOfferState({ date, startTime, endTime, phone });
-  const prompt = '¿Querés que preparemos una invitación personalizada para el cumpleaños? Respondé SÍ o NO.';
+  const state = buildBirthdayInvitationNameState({ date, startTime, endTime, phone });
+  const prompt = '¿Cuál es el nombre del cumpleañero o cumpleañera?';
 
   await saveBotFlowState(session.id, canonicalJid, 'reservation', state);
   try {
@@ -1286,9 +1286,9 @@ async function birthdayInvitationHandler(req, res) {
     await clearBotFlowState(session.id, canonicalJid, 'reservation');
     logger.error(
       { clientId: session.id, clientName: session.clientName, jid, error: serializeError(error) },
-      'No se pudo iniciar el flujo de invitación de cumpleaños'
+      'No se pudo solicitar el nombre para la invitación de cumpleaños'
     );
-    return res.status(500).json({ error: 'No se pudo enviar la propuesta de invitación' });
+    return res.status(500).json({ error: 'No se pudo solicitar el nombre para la invitación' });
   }
 
   return res.json({ ok: true, clientId: session.id, to: jid });

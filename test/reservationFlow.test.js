@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildBirthdayInvitationOfferState,
+  buildBirthdayInvitationNameState,
   handleRegistrationFlow,
   handleReservationFlow
 } from '../src/reservationFlow.js';
@@ -564,44 +564,15 @@ test('advierte que el link de Mercado Pago vence a los 10 minutos', async () => 
   assert.match(result.replies[0], /tendrás que solicitarlo nuevamente/i);
 });
 
-test('ofrece personalizar la invitacion despues de confirmar un cumpleanios', async () => {
-  const state = buildBirthdayInvitationOfferState({
+test('solicita directamente el nombre despues de confirmar un cumpleanios', () => {
+  const state = buildBirthdayInvitationNameState({
     date: '21-08-2026',
     startTime: '18:00',
     endTime: '21:00',
     phone: '5493886002759'
   });
 
-  const result = await handleReservationFlow({
-    ...baseInput,
-    state,
-    text: 'sí',
-    reservasApi: fakeApi()
-  });
-
-  assert.equal(result.state?.step, 'birthday_invitation_name');
-  assert.match(result.replies[0], /nombre del cumpleañero/i);
-});
-
-test('si rechaza personalizar envia la plantilla base y el reglamento', async () => {
-  const result = await handleReservationFlow({
-    ...baseInput,
-    state: buildBirthdayInvitationOfferState({
-      date: '21-08-2026',
-      startTime: '18:00',
-      endTime: '21:00',
-      phone: '5493886002759'
-    }),
-    text: 'no',
-    reservasApi: fakeApi()
-  });
-
-  assert.equal(result.state, null);
-  assert.deepEqual(result.media.map(media => media.fileName), [
-    'invitacion_cumple_base.png',
-    'reglamento_cancha.png'
-  ]);
-  assert.match(result.afterMediaReplies[0], /wa\.me\/5493886002759/);
+  assert.equal(state.step, 'birthday_invitation_name');
 });
 
 test('genera la invitacion personalizada y adjunta solamente el reglamento', async () => {

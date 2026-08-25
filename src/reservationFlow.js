@@ -438,8 +438,8 @@ function buildState(step, data = {}) {
   return { step, data, updatedAt: new Date().toISOString() };
 }
 
-export function buildBirthdayInvitationOfferState(data) {
-  return buildState('birthday_invitation_offer', data);
+export function buildBirthdayInvitationNameState(data) {
+  return buildState('birthday_invitation_name', data);
 }
 
 function isExpired(state) {

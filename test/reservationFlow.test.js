@@ -824,6 +824,40 @@ test('solicita directamente el nombre despues de confirmar un cumpleanios', () =
   assert.equal(state.step, 'birthday_invitation_name');
 });
 
+test('permite elegir si conserva un nombre compuesto en la invitacion', async () => {
+  const invitationData = {
+    date: '21-08-2026',
+    startTime: '18:00',
+    endTime: '21:00',
+    phone: '5493886002759'
+  };
+  const clarification = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'birthday_invitation_name',
+      data: invitationData,
+      updatedAt: new Date().toISOString()
+    },
+    text: 'Maria Jose',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(clarification.state?.step, 'birthday_invitation_name_choice');
+  assert.match(clarification.replies[0], /1\. Maria/);
+  assert.match(clarification.replies[0], /2\. Maria Jose/);
+
+  const generated = await handleReservationFlow({
+    ...baseInput,
+    state: clarification.state,
+    text: '2',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(generated.state, null);
+  assert.match(generated.replies[0], /para Maria Jose/i);
+  assert.ok(Buffer.isBuffer(generated.media[0].buffer));
+});
+
 test('genera la invitacion solamente con el nombre detectado y adjunta el reglamento', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

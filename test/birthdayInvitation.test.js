@@ -6,7 +6,8 @@ import {
   BIRTHDAY_INVITATION_TEMPLATE,
   createBirthdayInvitation,
   formatInvitationPhone,
-  invitationFirstName
+  invitationFirstName,
+  invitationNameOptions
 } from '../src/birthdayInvitation.js';
 
 test('formatea el telefono argentino para la tarjeta', () => {
@@ -24,6 +25,12 @@ test('extrae el nombre aunque escriban nombre y apellido en distinto orden', () 
 test('pide aclaracion cuando no puede distinguir el nombre del apellido', () => {
   assert.equal(invitationFirstName('Apellido Desconocido'), '');
   assert.equal(invitationFirstName(''), '');
+});
+
+test('ofrece conservar un nombre compuesto', () => {
+  assert.deepEqual(invitationNameOptions('Maria Jose'), ['Maria', 'Maria Jose']);
+  assert.deepEqual(invitationNameOptions('Martin Gustavo'), ['Martin', 'Martin Gustavo']);
+  assert.deepEqual(invitationNameOptions('Orquera Dario'), []);
 });
 
 test('genera una tarjeta PNG con las dimensiones de la plantilla', async () => {

@@ -24,7 +24,8 @@ import {
   BIRTHDAY_INVITATION_TEMPLATE,
   BIRTHDAY_RULES_IMAGE,
   createBirthdayInvitation,
-  invitationFirstName
+  invitationFirstName,
+  invitationNameOptions
 } from './birthdayInvitation.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
@@ -449,6 +450,12 @@ function isExpectedFlowAnswer(state, text) {
       return !/[?¿]/.test(String(text || '')) && normalized.length >= 2;
     case 'birthday_invitation_offer':
       return ['si', 'quiero', 'dale', 'acepto', 'no', 'no gracias'].includes(normalized);
+    case 'birthday_invitation_name_choice':
+      return Boolean(parseChoice(
+        text,
+        (data.nameOptions || []).map((name) => ({ label: name })),
+        'label'
+      ));
     default:
       return false;
   }
@@ -506,6 +513,8 @@ function currentFlowReminder(state, businessSettings = {}) {
       return 'Respondé SÍ si querés una invitación personalizada o NO para continuar sin personalizarla.';
     case 'birthday_invitation_name':
       return '¿Cuál es el primer nombre del cumpleañero o cumpleañera? Escribí solamente el nombre, sin apellido.';
+    case 'birthday_invitation_name_choice':
+      return `¿Cómo querés que aparezca en la invitación?\n${(data.nameOptions || []).map((name, index) => `${index + 1}. ${name}`).join('\n')}`;
     default:
       return 'Cuando quieras, respondé la pregunta anterior para continuar.';
   }
@@ -531,6 +540,13 @@ function answerFaqWithoutInterruptingFlow({ answer, state, pushName, businessSet
 
 function goBack(state, businessSettings = {}) {
   const data = state.data || {};
+
+  if (state.step === 'birthday_invitation_name_choice') {
+    return {
+      state: buildState('birthday_invitation_name', data),
+      replies: ['Escribí nuevamente el primer nombre del cumpleañero o cumpleañera, sin apellido.']
+    };
+  }
 
   if (state.step === 'ask_phone' && data.intent === 'reservation_after_availability') {
     return {
@@ -1355,6 +1371,18 @@ async function continueFlow({
   }
 
   if (state.step === 'birthday_invitation_name') {
+    const nameOptions = invitationNameOptions(text);
+    if (nameOptions.length > 1) {
+      return {
+        state: buildState('birthday_invitation_name_choice', { ...state.data, nameOptions }),
+        replies: [[
+          'Detecté más de un nombre posible. ¿Cómo querés que aparezca en la invitación?',
+          ...nameOptions.map((name, index) => `${index + 1}. ${name}`),
+          'Respondé con el número de la opción.'
+        ].join('\n')]
+      };
+    }
+
     const birthdayName = invitationFirstName(text);
     if (!birthdayName) {
       return {
@@ -1363,6 +1391,39 @@ async function continueFlow({
       };
     }
 
+    const invitation = await createBirthdayInvitation({
+      name: birthdayName,
+      date: String(state.data?.date || '').replaceAll('-', '/'),
+      startTime: state.data?.startTime,
+      endTime: state.data?.endTime,
+      phone: state.data?.phone || phoneFromJid(canonicalJid)
+    });
+
+    return {
+      state: null,
+      replies: [`¡Listo! Preparé la invitación personalizada para ${birthdayName}.`],
+      media: [
+        { buffer: invitation, fileName: 'invitacion_personalizada.png', caption: 'Invitación personalizada' },
+        { path: BIRTHDAY_RULES_IMAGE, fileName: 'reglamento_cancha.png', caption: 'Reglamento para cumpleaños' }
+      ],
+      afterMediaReplies: [`Para dudas específicas, podés comunicarte con nosotros acá:\n${BIRTHDAY_CONTACT_URL}`]
+    };
+  }
+
+  if (state.step === 'birthday_invitation_name_choice') {
+    const options = (state.data?.nameOptions || []).map((name) => ({ label: name, name }));
+    const selected = parseChoice(text, options, 'label');
+    if (!selected) {
+      return {
+        state: buildState('birthday_invitation_name_choice', state.data),
+        replies: [[
+          'Elegí cómo querés que aparezca el nombre en la invitación:',
+          ...options.map((option, index) => `${index + 1}. ${option.name}`)
+        ].join('\n')]
+      };
+    }
+
+    const birthdayName = selected.name;
     const invitation = await createBirthdayInvitation({
       name: birthdayName,
       date: String(state.data?.date || '').replaceAll('-', '/'),

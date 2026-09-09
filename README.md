@@ -258,7 +258,7 @@ El bot:
 - pregunta cancha, duracion, fecha, horario, aceptacion de terminos, nombre/email si hacen falta
 - crea la reserva y devuelve el link de pago de Mercado Pago
 - informa que el link de Mercado Pago permanece activo 10 minutos y que, vencido ese plazo sin pago, el turno se cancela y debe solicitarse nuevamente
-- despues de acreditarse la seña de una reserva de cumpleaños, solicita el primer nombre del cumpleañero; si escriben nombre y apellido intenta detectar el nombre aunque aparezca al final y evita generar la tarjeta cuando el dato es ambiguo
+- despues de acreditarse la seña de una reserva de cumpleaños, solicita el primer nombre del cumpleañero; detecta el nombre aunque aparezca después del apellido y, cuando reconoce un posible nombre compuesto como `Maria Jose`, pregunta si debe usar el primero o conservar ambos
 - envia la invitacion personalizada, el reglamento y el contacto `https://wa.me/5493886002759`; las imagenes se encuentran en `assets/birthday`
 - responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno`; combina turnos pasados y futuros, elimina duplicados y muestra hasta 5 reservas ordenadas desde la fecha y hora mas recientes
 - despues de elegir fecha pregunta a que hora quiere comenzar; busca ese horario en todas las canchas compatibles y, si no existe exacto o se ocupa antes de confirmar, muestra primero los horarios mas cercanos para la misma fecha y duracion

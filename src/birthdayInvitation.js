@@ -66,6 +66,19 @@ export function invitationFirstName(value) {
   return recognized ? formatFirstName(recognized) : '';
 }
 
+export function invitationNameOptions(value) {
+  const words = cleanText(value, 80).match(/[\p{L}]+(?:[-'][\p{L}]+)*/gu) || [];
+  const recognized = words
+    .filter((word) => COMMON_FIRST_NAMES.has(normalizeNameToken(word)))
+    .map(formatFirstName);
+
+  if (recognized.length < 2) return [];
+
+  const firstName = recognized[0];
+  const compoundName = recognized.join(' ');
+  return firstName === compoundName ? [firstName] : [firstName, compoundName];
+}
+
 function invitationNameLines(value) {
   const name = cleanText(value, 48).toLocaleUpperCase('es-AR');
   if (name.length <= 22) return [name];

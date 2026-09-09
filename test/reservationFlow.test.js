@@ -131,9 +131,27 @@ test('responde consultas durante el registro sin perder el dato pendiente', asyn
 
   assert.equal(result.handled, true);
   assert.equal(result.state?.step, 'ask_register_email');
-  assert.match(result.replies[0], /consulta específica/i);
+  assert.match(result.replies[0], /exclusivamente a reservas/i);
   assert.match(result.replies[0], /wa\.me\/5493886002759/);
   assert.match(result.replies[0], /pasame tu correo electrónico/i);
+});
+
+test('deriva otras consultas al WhatsApp específico y conserva el flujo', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_fecha',
+      data: {},
+      updatedAt: new Date().toISOString()
+    },
+    text: 'Dan clases de fútbol para niños',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'ask_fecha');
+  assert.match(result.replies[0], /exclusivamente a reservas/i);
+  assert.match(result.replies[0], /wa\.me\/5493886002759/);
+  assert.match(result.replies[0], /¿Qué fecha querés reservar\?/i);
 });
 
 test('un cliente registrado es saludado con el nombre normalizado de la base', async () => {

@@ -55,6 +55,7 @@ const FLOW_TIMEOUT_MINUTES = Math.max(
   1,
   Number(process.env.RESERVATION_FLOW_TIMEOUT_MINUTES || DEFAULT_FLOW_TIMEOUT_MINUTES)
 );
+const SPECIFIC_QUESTIONS_MESSAGE = `Este número está destinado exclusivamente a reservas. Para dudas o consultas específicas, comunicate con la cancha por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
 
 function phoneFromJid(jid) {
   if (!jid?.endsWith('@s.whatsapp.net')) return '';
@@ -358,7 +359,7 @@ function faqAnswer(text) {
   }
 
   if (/\b(parrilla|parrillas|asado)\b/.test(normalized)) {
-    return `Sí, está permitido usar la parrilla, pero se requiere un consumo mínimo. Para consultar el monto o coordinarlo, comunicate por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
+    return 'Sí, está permitido usar la parrilla, pero se requiere un consumo mínimo.';
   }
 
   if (/\b(pechera|pecheras|chaleco|chalecos)\b/.test(normalized)) {
@@ -378,15 +379,15 @@ function faqAnswer(text) {
   }
 
   if (/\b(vajilla|manteleria|manteles|platos|cubiertos)\b/.test(normalized)) {
-    return `La vajilla y la mantelería tienen un costo adicional. Para consultar el precio, comunicate por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
+    return 'La vajilla y la mantelería tienen un costo adicional.';
   }
 
   if (/\b(salon superior|salon de arriba|ambos salones|dos salones)\b/.test(normalized)) {
-    return `El salón superior y el uso de ambos salones tienen un costo adicional. Para consultar disponibilidad y precio:\n${BIRTHDAY_CONTACT_URL}`;
+    return 'El salón superior y el uso de ambos salones tienen un costo adicional.';
   }
 
   if (/\b(capacidad|cuantas personas|cantidad de personas|mas de 30|30 personas)\b/.test(normalized)) {
-    return `La reserva de cumpleaños incluye hasta 30 personas entre adultos y niños. Las personas adicionales tienen costo; podés consultarlo acá:\n${BIRTHDAY_CONTACT_URL}`;
+    return 'La reserva de cumpleaños incluye hasta 30 personas entre adultos y niños. Las personas adicionales tienen costo.';
   }
 
   if (/\b(reembolso|reembolsable|devolucion|devolver la senia|cancelar el cumple)\b/.test(normalized)) {
@@ -394,10 +395,73 @@ function faqAnswer(text) {
   }
 
   if (/\b(wifi|estacionamiento|vestuario|vestuarios|ducha|duchas|mascota|mascotas|decoracion|decorar|torta|comida|mesas|sillas|musica|parlante|parlantes|aire acondicionado|calefaccion)\b/.test(normalized)) {
-    return `Para esa consulta específica, comunicate directamente con la cancha por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
+    return SPECIFIC_QUESTIONS_MESSAGE;
   }
 
   return '';
+}
+
+function isExpectedFlowAnswer(state, text) {
+  const data = state?.data || {};
+  const normalized = normalizeText(text);
+
+  switch (state?.step) {
+    case undefined:
+    case 'main_menu':
+      return Boolean(
+        parseMainMenuChoice(text)
+        || hasAvailabilityIntent(text)
+        || hasQueryIntent(text)
+        || hasRegisterIntent(text)
+        || hasProductIntent(text)
+        || /\b(quiero reservar|hacer una reserva|reservar un turno|buscar un turno)\b/.test(normalized)
+        || hasGreeting(text)
+      );
+    case 'ask_phone':
+    case 'ask_register_match_phone':
+      return looksLikeArgentinePhone(text) || normalized === 'usar email';
+    case 'ask_register_email':
+    case 'ask_register_match_email':
+    case 'ask_email':
+      return Boolean(parseEmail(text));
+    case 'ask_cancha':
+      return Boolean(parseChoice(text, data.canchas || []));
+    case 'ask_duracion':
+      return Boolean(parseDuration(text));
+    case 'ask_fecha':
+      return Boolean(parseDate(text));
+    case 'ask_start_time':
+      return Boolean(parseRequestedTime(text));
+    case 'ask_slot':
+      return Boolean(parseChoice(text, data.slots || [], 'label'));
+    case 'ask_alternative_slot':
+      return Boolean(parseChoice(text, data.alternativeSlots || [], 'label'));
+    case 'ask_availability_reserve':
+      return ['1', '2', 'si', 'no', 'reservar', 'si reservar'].includes(normalized);
+    case 'ask_terms':
+      return ['si', 'si acepto', 'acepto'].includes(normalized);
+    case 'ask_confirm':
+      return ['si', 'confirmo', 'reservar'].includes(normalized);
+    case 'ask_register_name':
+    case 'ask_name':
+    case 'birthday_invitation_name':
+      return !/[?¿]/.test(String(text || '')) && normalized.length >= 2;
+    case 'birthday_invitation_offer':
+      return ['si', 'quiero', 'dale', 'acepto', 'no', 'no gracias'].includes(normalized);
+    default:
+      return false;
+  }
+}
+
+function isOtherInquiry(state, text) {
+  const normalized = normalizeText(text);
+  const questionLike = /[?¿]/.test(String(text || ''))
+    || /^(que|como|cuando|donde|cuanto|por que|tienen|hay|dan|hacen|venden|alquilan|permiten|cuentan|puedo|se puede|quisiera saber)\b/.test(normalized);
+
+  return questionLike
+    && !wantsCancel(text)
+    && !wantsBack(text)
+    && !isExpectedFlowAnswer(state, text);
 }
 
 function currentFlowReminder(state, businessSettings = {}) {
@@ -447,16 +511,20 @@ function currentFlowReminder(state, businessSettings = {}) {
 }
 
 function answerFaqWithoutInterruptingFlow({ answer, state, pushName, businessSettings }) {
+  const completeAnswer = answer.includes('exclusivamente a reservas')
+    ? answer
+    : `${answer}\n\n${SPECIFIC_QUESTIONS_MESSAGE}`;
+
   if (!state || state.step === 'main_menu') {
     return {
       state: buildState('main_menu', { ...(state?.data || {}), pushName }),
-      replies: [[answer, userMenuMessage(businessSettings)].join('\n\n')]
+      replies: [[completeAnswer, userMenuMessage(businessSettings)].join('\n\n')]
     };
   }
 
   return {
     state: buildState(state.step, state.data || {}),
-    replies: [[answer, 'Continuemos donde estábamos:', currentFlowReminder(state, businessSettings)].join('\n\n')]
+    replies: [[completeAnswer, 'Continuemos donde estábamos:', currentFlowReminder(state, businessSettings)].join('\n\n')]
   };
 }
 
@@ -1237,6 +1305,15 @@ async function continueFlow({
     });
   }
 
+  if (isOtherInquiry(state, text)) {
+    return answerFaqWithoutInterruptingFlow({
+      answer: SPECIFIC_QUESTIONS_MESSAGE,
+      state,
+      pushName,
+      businessSettings
+    });
+  }
+
   if (!state) {
     const greetingName = await greetingNameFor(canonicalJid, pushName);
     const welcome = buildWelcomeMessage(businessSettings, businessName, greetingName);
@@ -1344,7 +1421,7 @@ async function continueFlow({
       return {
         state: buildState('main_menu', { pushName }),
         replies: [[
-          'No pude identificar una opcion.',
+          SPECIFIC_QUESTIONS_MESSAGE,
           userMenuMessage(businessSettings)
         ].join('\n\n')]
       };

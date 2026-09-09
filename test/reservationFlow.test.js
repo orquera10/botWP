@@ -824,7 +824,7 @@ test('solicita directamente el nombre despues de confirmar un cumpleanios', () =
   assert.equal(state.step, 'birthday_invitation_name');
 });
 
-test('genera la invitacion personalizada y adjunta solamente el reglamento', async () => {
+test('genera la invitacion solamente con el nombre detectado y adjunta el reglamento', async () => {
   const result = await handleReservationFlow({
     ...baseInput,
     state: {
@@ -837,11 +837,13 @@ test('genera la invitacion personalizada y adjunta solamente el reglamento', asy
       },
       updatedAt: new Date().toISOString()
     },
-    text: 'Martina',
+    text: 'Orquera Dario',
     reservasApi: fakeApi()
   });
 
   assert.equal(result.state, null);
+  assert.match(result.replies[0], /para Dario/i);
+  assert.doesNotMatch(result.replies[0], /Orquera/i);
   assert.equal(result.media.length, 2);
   assert.ok(Buffer.isBuffer(result.media[0].buffer));
   assert.equal(result.media[1].fileName, 'reglamento_cancha.png');

@@ -20,8 +20,50 @@ export const BIRTHDAY_INVITATION_TEMPLATE = path.join(ASSETS_DIR, 'invitacion_cu
 export const BIRTHDAY_RULES_IMAGE = path.join(ASSETS_DIR, 'reglamento_cancha.png');
 export const BIRTHDAY_CONTACT_URL = 'https://wa.me/5493886002759';
 
+const COMMON_FIRST_NAMES = new Set(`
+  agustin alan alejandra alejandra alejandro alex alexis alicia alma ambar amparo ana andrea
+  andres angela antonella antonio april araceli ariel augusto ayelen azucena bautista belen
+  benicio benjamin bianca brenda brisa bruno camila candela carla carlos carolina catalina
+  cecilia celeste cesar chiara clara claudio constanza cristian cristina damian daniela daniel
+  dante dario debora delfina diego dolores eduardo elena elias elisa emilia emiliano emma
+  enzo esteban eugenia eva facundo fabian federico felipe fernanda fernando florencia francisco
+  franco gabriel gabriela gael gaspar gerardo gisela giuliana gloria gonzalo graciela guadalupe
+  gustavo hector ignacio ines isabel ivan jazmin jeremias joaquin jorge jose josefina juan
+  juana julian juliana karen karina lara lautaro leandro leonel lola lorena lucas lucia luciana
+  luciano luis luz magali maia maite malena manuel marcelo marcos margarita maria mariano
+  marina mario martina martin mateo matias maxima maximiliano melina mercedes mia micaela
+  milagros mirta monica nahuel natalia nicolas noa noelia olivia oscar pablo paola patricia
+  paulina pedro pilar ramiro raul renata ricardo roberto rocio rodolfo romina rosa rosario
+  sabrina samuel santiago sara sebastian sergio silvana silvia simon sofia soledad susana
+  tamara teo teresa thiago tiago valentina valeria valentino vicente victoria zoe
+`.trim().split(/\s+/));
+
 function cleanText(value, maxLength) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function normalizeNameToken(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function formatFirstName(value) {
+  return String(value || '')
+    .toLocaleLowerCase('es-AR')
+    .split('-')
+    .map((part) => part ? `${part[0].toLocaleUpperCase('es-AR')}${part.slice(1)}` : '')
+    .join('-');
+}
+
+export function invitationFirstName(value) {
+  const words = cleanText(value, 80).match(/[\p{L}]+(?:[-'][\p{L}]+)*/gu) || [];
+  if (words.length === 1) return formatFirstName(words[0]);
+  if (words.length < 2) return '';
+
+  const recognized = words.find((word) => COMMON_FIRST_NAMES.has(normalizeNameToken(word)));
+  return recognized ? formatFirstName(recognized) : '';
 }
 
 function invitationNameLines(value) {

@@ -1277,7 +1277,7 @@ async function birthdayInvitationHandler(req, res) {
 
   const canonicalJid = await getCanonicalConversationJid(session.id, jid);
   const state = buildBirthdayInvitationNameState({ date, startTime, endTime, phone });
-  const prompt = '¿Cuál es el nombre del cumpleañero o cumpleañera?';
+  const prompt = '¿Cuál es el primer nombre del cumpleañero o cumpleañera? Escribí solamente el nombre, sin apellido.';
 
   await saveBotFlowState(session.id, canonicalJid, 'reservation', state);
   try {

@@ -5,12 +5,25 @@ import sharp from 'sharp';
 import {
   BIRTHDAY_INVITATION_TEMPLATE,
   createBirthdayInvitation,
-  formatInvitationPhone
+  formatInvitationPhone,
+  invitationFirstName
 } from '../src/birthdayInvitation.js';
 
 test('formatea el telefono argentino para la tarjeta', () => {
   assert.equal(formatInvitationPhone('5493886002759'), '3886 002759');
   assert.equal(formatInvitationPhone('3886-002759'), '3886 002759');
+});
+
+test('extrae el nombre aunque escriban nombre y apellido en distinto orden', () => {
+  assert.equal(invitationFirstName('Dario Orquera'), 'Dario');
+  assert.equal(invitationFirstName('Orquera Dario'), 'Dario');
+  assert.equal(invitationFirstName('  camila pérez  '), 'Camila');
+  assert.equal(invitationFirstName('Martina'), 'Martina');
+});
+
+test('pide aclaracion cuando no puede distinguir el nombre del apellido', () => {
+  assert.equal(invitationFirstName('Apellido Desconocido'), '');
+  assert.equal(invitationFirstName(''), '');
 });
 
 test('genera una tarjeta PNG con las dimensiones de la plantilla', async () => {

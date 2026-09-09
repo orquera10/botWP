@@ -23,7 +23,8 @@ import {
   BIRTHDAY_CONTACT_URL,
   BIRTHDAY_INVITATION_TEMPLATE,
   BIRTHDAY_RULES_IMAGE,
-  createBirthdayInvitation
+  createBirthdayInvitation,
+  invitationFirstName
 } from './birthdayInvitation.js';
 
 const TRIGGER_WORDS = ['reserv', 'turno', 'cancha', 'jugar', 'futbol', 'fútbol', 'cumple'];
@@ -504,7 +505,7 @@ function currentFlowReminder(state, businessSettings = {}) {
     case 'birthday_invitation_offer':
       return 'Respondé SÍ si querés una invitación personalizada o NO para continuar sin personalizarla.';
     case 'birthday_invitation_name':
-      return '¿Cuál es el nombre del cumpleañero o cumpleañera?';
+      return '¿Cuál es el primer nombre del cumpleañero o cumpleañera? Escribí solamente el nombre, sin apellido.';
     default:
       return 'Cuando quieras, respondé la pregunta anterior para continuar.';
   }
@@ -1331,7 +1332,7 @@ async function continueFlow({
     if (accepted) {
       return {
         state: buildState('birthday_invitation_name', state.data),
-        replies: ['¿Cuál es el nombre del cumpleañero o cumpleañera?']
+        replies: ['¿Cuál es el primer nombre del cumpleañero o cumpleañera? Escribí solamente el nombre, sin apellido.']
       };
     }
 
@@ -1354,11 +1355,11 @@ async function continueFlow({
   }
 
   if (state.step === 'birthday_invitation_name') {
-    const birthdayName = String(text || '').replace(/\s+/g, ' ').trim();
-    if (birthdayName.length < 2 || birthdayName.length > 48) {
+    const birthdayName = invitationFirstName(text);
+    if (!birthdayName) {
       return {
         state: buildState('birthday_invitation_name', state.data),
-        replies: ['Escribí un nombre de entre 2 y 48 caracteres para preparar la invitación.']
+        replies: ['Para que la tarjeta quede bien, escribí únicamente el primer nombre del cumpleañero o cumpleañera, sin apellido.']
       };
     }
 

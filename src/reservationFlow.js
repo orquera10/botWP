@@ -166,6 +166,16 @@ function hasAvailabilityIntent(text) {
   return AVAILABILITY_TRIGGER_WORDS.some((word) => normalized.includes(normalizeText(word)));
 }
 
+function hasCourtPriceIntent(text) {
+  const normalized = normalizeText(text);
+  const withoutQuestionMarks = normalized.replace(/[¿?!.]/g, '').trim();
+  const mentionsPrice = /\b(precio|precios|tarifa|tarifas|valor|valores|cuanto sale|cuanto salen|cuanto cuesta|cuanto cuestan|cuanto cobran)\b/.test(normalized);
+  const mentionsReservation = /\b(cancha|canchas|turno|turnos|reserva|reservas|futbol|cumple|cumpleanos)\b/.test(normalized);
+  const genericPriceQuestion = /^(precios?|tarifas?|valores?|cuanto (sale|cuesta|cobran)|que precio tienen)$/.test(withoutQuestionMarks);
+
+  return genericPriceQuestion || (mentionsPrice && mentionsReservation);
+}
+
 function parseMainMenuChoice(text) {
   const normalized = normalizeText(text);
   if (normalized === '1') return 'reservation';
@@ -257,6 +267,23 @@ function formatCanchas(canchas) {
     })
     .concat('0. Volver')
     .join('\n');
+}
+
+function formatCourtPrices(canchas) {
+  const lines = (canchas || []).map((cancha) => {
+    const price = Number(cancha.precio);
+    const formattedPrice = Number.isFinite(price)
+      ? price.toLocaleString('es-AR', { maximumFractionDigits: 2 })
+      : String(cancha.precio || '').trim();
+    const unit = String(cancha.precio_unidad || 'hora').trim().replace(/^por\s+/i, '');
+    const duration = cancha.duracion_fija ? ` (${cancha.duracion_fija} hs)` : '';
+
+    return `• ${cancha.nombre}${duration}: $${formattedPrice} por ${unit}`;
+  });
+
+  return lines.length
+    ? `Estos son los precios actuales de las canchas:\n${lines.join('\n')}`
+    : 'En este momento no pude encontrar precios de canchas configurados.';
 }
 
 function formatSlots(slots) {
@@ -1310,6 +1337,16 @@ async function continueFlow({
         ...restarted.replies
       ]
     };
+  }
+
+  if (hasCourtPriceIntent(text)) {
+    const canchas = await listarCanchas();
+    return answerFaqWithoutInterruptingFlow({
+      answer: formatCourtPrices(canchas),
+      state,
+      pushName,
+      businessSettings
+    });
   }
 
   const faq = faqAnswer(text);

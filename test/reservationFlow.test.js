@@ -83,6 +83,45 @@ test('responde sobre la parrilla y vuelve al menu cuando no hay un flujo activo'
   assert.match(result.replies[0], /1\. Buscar un turno/i);
 });
 
+test('consulta y muestra los precios actuales de las canchas', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    text: '¿Cuánto salen las canchas?',
+    reservasApi: fakeApi({
+      listarCanchas: async () => [
+        { id: 1, nombre: 'Cancha 1', precio: 18000, precio_unidad: 'hora' },
+        { id: 2, nombre: 'Cumpleaños', precio: 95000, precio_unidad: 'reserva', duracion_fija: 3 }
+      ]
+    })
+  });
+
+  assert.equal(result.state?.step, 'main_menu');
+  assert.match(result.replies[0], /Cancha 1: \$18[.]000 por hora/i);
+  assert.match(result.replies[0], /Cumpleaños \(3 hs\): \$95[.]000 por reserva/i);
+  assert.match(result.replies[0], /wa\.me\/5493886002759/);
+});
+
+test('responde el precio y conserva la pregunta pendiente de una reserva', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_fecha',
+      data: { cancha: { id: 1, nombre: 'Cancha 1' }, duracion: 1 },
+      updatedAt: new Date().toISOString()
+    },
+    text: 'precio del turno',
+    reservasApi: fakeApi({
+      listarCanchas: async () => [
+        { id: 1, nombre: 'Cancha 1', precio: 18000, precio_unidad: 'hora' }
+      ]
+    })
+  });
+
+  assert.equal(result.state?.step, 'ask_fecha');
+  assert.match(result.replies[0], /Cancha 1: \$18[.]000 por hora/i);
+  assert.match(result.replies[0], /¿Qué fecha querés reservar\?/i);
+});
+
 test('responde que los peloteros no estan permitidos y conserva la reserva', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

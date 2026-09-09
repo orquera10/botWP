@@ -858,6 +858,28 @@ test('permite elegir si conserva un nombre compuesto en la invitacion', async ()
   assert.ok(Buffer.isBuffer(generated.media[0].buffer));
 });
 
+test('detecta un nombre compuesto aunque despues escriban dos apellidos', async () => {
+  const clarification = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'birthday_invitation_name',
+      data: {
+        date: '21-08-2026',
+        startTime: '18:00',
+        endTime: '21:00',
+        phone: '5493886002759'
+      },
+      updatedAt: new Date().toISOString()
+    },
+    text: 'Maria Ester Florucnio Gimenez',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(clarification.state?.step, 'birthday_invitation_name_choice');
+  assert.deepEqual(clarification.state?.data?.nameOptions, ['Maria', 'Maria Ester']);
+  assert.match(clarification.replies[0], /2\. Maria Ester/);
+});
+
 test('genera la invitacion solamente con el nombre detectado y adjunta el reglamento', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

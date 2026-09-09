@@ -26,7 +26,7 @@ const COMMON_FIRST_NAMES = new Set(`
   benicio benjamin bianca brenda brisa bruno camila candela carla carlos carolina catalina
   cecilia celeste cesar chiara clara claudio constanza cristian cristina damian daniela daniel
   dante dario debora delfina diego dolores eduardo elena elias elisa emilia emiliano emma
-  enzo esteban eugenia eva facundo fabian federico felipe fernanda fernando florencia francisco
+  enzo esteban ester eugenia eva facundo fabian federico felipe fernanda fernando florencia francisco
   franco gabriel gabriela gael gaspar gerardo gisela giuliana gloria gonzalo graciela guadalupe
   gustavo hector ignacio ines isabel ivan jazmin jeremias joaquin jorge jose josefina juan
   juana julian juliana karen karina lara lautaro leandro leonel lola lorena lucas lucia luciana

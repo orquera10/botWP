@@ -30,6 +30,10 @@ test('pide aclaracion cuando no puede distinguir el nombre del apellido', () => 
 test('ofrece conservar un nombre compuesto', () => {
   assert.deepEqual(invitationNameOptions('Maria Jose'), ['Maria', 'Maria Jose']);
   assert.deepEqual(invitationNameOptions('Martin Gustavo'), ['Martin', 'Martin Gustavo']);
+  assert.deepEqual(
+    invitationNameOptions('Maria Ester Florucnio Gimenez'),
+    ['Maria', 'Maria Ester']
+  );
   assert.deepEqual(invitationNameOptions('Orquera Dario'), []);
 });
 

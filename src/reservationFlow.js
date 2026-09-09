@@ -350,6 +350,116 @@ function mainMenuMessage(businessSettings = {}) {
   return userMenuMessage(businessSettings, 'Volvimos al menu principal.');
 }
 
+function faqAnswer(text) {
+  const normalized = normalizeText(text);
+
+  if (/\b(pelotero|peloteros|cama elastica|camas elasticas|inflable|inflables)\b/.test(normalized)) {
+    return 'No está permitido ingresar peloteros, camas elásticas, inflables ni otros aparatos o juegos.';
+  }
+
+  if (/\b(parrilla|parrillas|asado)\b/.test(normalized)) {
+    return `Sí, está permitido usar la parrilla, pero se requiere un consumo mínimo. Para consultar el monto o coordinarlo, comunicate por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
+  }
+
+  if (/\b(pechera|pecheras|chaleco|chalecos)\b/.test(normalized)) {
+    return 'Sí, contamos con pecheras para los equipos.';
+  }
+
+  if (/\b(bebida|bebidas|gaseosa|gaseosas|cerveza|cervezas)\b/.test(normalized)) {
+    return 'No está permitido ingresar bebidas. Se pueden consumir las que están disponibles para la venta en el salón.';
+  }
+
+  if (/\b(cocina|cocinar)\b/.test(normalized)) {
+    return 'No está permitido ingresar a la cocina; su uso es exclusivo del personal.';
+  }
+
+  if (/\b(pinata|pinatas|papel picado)\b/.test(normalized)) {
+    return 'No está permitido tirar papel picado ni usar piñatas dentro del espacio de la cancha.';
+  }
+
+  if (/\b(vajilla|manteleria|manteles|platos|cubiertos)\b/.test(normalized)) {
+    return `La vajilla y la mantelería tienen un costo adicional. Para consultar el precio, comunicate por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
+  }
+
+  if (/\b(salon superior|salon de arriba|ambos salones|dos salones)\b/.test(normalized)) {
+    return `El salón superior y el uso de ambos salones tienen un costo adicional. Para consultar disponibilidad y precio:\n${BIRTHDAY_CONTACT_URL}`;
+  }
+
+  if (/\b(capacidad|cuantas personas|cantidad de personas|mas de 30|30 personas)\b/.test(normalized)) {
+    return `La reserva de cumpleaños incluye hasta 30 personas entre adultos y niños. Las personas adicionales tienen costo; podés consultarlo acá:\n${BIRTHDAY_CONTACT_URL}`;
+  }
+
+  if (/\b(reembolso|reembolsable|devolucion|devolver la senia|cancelar el cumple)\b/.test(normalized)) {
+    return 'La seña es totalmente reembolsable únicamente hasta 72 horas antes del evento.';
+  }
+
+  if (/\b(wifi|estacionamiento|vestuario|vestuarios|ducha|duchas|mascota|mascotas|decoracion|decorar|torta|comida|mesas|sillas|musica|parlante|parlantes|aire acondicionado|calefaccion)\b/.test(normalized)) {
+    return `Para esa consulta específica, comunicate directamente con la cancha por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
+  }
+
+  return '';
+}
+
+function currentFlowReminder(state, businessSettings = {}) {
+  const data = state?.data || {};
+  switch (state?.step) {
+    case 'main_menu':
+      return userMenuMessage(businessSettings);
+    case 'ask_phone':
+      return phoneRequestMessage('continuar');
+    case 'ask_register_email':
+      return 'Para continuar, pasame tu correo electrónico.';
+    case 'ask_register_name':
+      return 'Para continuar, pasame tu nombre y apellido.';
+    case 'ask_register_match_phone':
+      return 'Para continuar, escribí el teléfono que figura en el registro o "usar email".';
+    case 'ask_register_match_email':
+      return 'Para continuar, escribí el correo electrónico que figura en el registro.';
+    case 'ask_cancha':
+      return `Elegí la cancha respondiendo con el número:\n${formatCanchas(data.canchas || [])}`;
+    case 'ask_duracion':
+      return '¿Cuántas horas querés reservar? Respondé 1, 2, 3 o 4.';
+    case 'ask_fecha':
+      return dateRequestMessage('¿Qué fecha querés reservar?');
+    case 'ask_start_time':
+      return '¿A qué hora querés comenzar? Por ejemplo: 18:00.';
+    case 'ask_slot':
+      return `Elegí el horario respondiendo con el número:\n${formatSlots(data.slots || [])}`;
+    case 'ask_alternative_slot':
+      return `Elegí un turno respondiendo con el número:\n${formatAlternativeSlots(data.alternativeSlots || [])}`;
+    case 'ask_availability_reserve':
+      return 'Respondé 1 para reservar uno de los horarios o 2 para volver al menú.';
+    case 'ask_terms':
+      return termsAcceptancePrompt();
+    case 'ask_name':
+      return '¿A nombre de quién queda la reserva?';
+    case 'ask_email':
+      return 'Pasame el correo electrónico para generar el pago de la seña.';
+    case 'ask_confirm':
+      return summaryMessage(data);
+    case 'birthday_invitation_offer':
+      return 'Respondé SÍ si querés una invitación personalizada o NO para continuar sin personalizarla.';
+    case 'birthday_invitation_name':
+      return '¿Cuál es el nombre del cumpleañero o cumpleañera?';
+    default:
+      return 'Cuando quieras, respondé la pregunta anterior para continuar.';
+  }
+}
+
+function answerFaqWithoutInterruptingFlow({ answer, state, pushName, businessSettings }) {
+  if (!state || state.step === 'main_menu') {
+    return {
+      state: buildState('main_menu', { ...(state?.data || {}), pushName }),
+      replies: [[answer, userMenuMessage(businessSettings)].join('\n\n')]
+    };
+  }
+
+  return {
+    state: buildState(state.step, state.data || {}),
+    replies: [[answer, 'Continuemos donde estábamos:', currentFlowReminder(state, businessSettings)].join('\n\n')]
+  };
+}
+
 function goBack(state, businessSettings = {}) {
   const data = state.data || {};
 
@@ -1115,6 +1225,16 @@ async function continueFlow({
         ...restarted.replies
       ]
     };
+  }
+
+  const faq = faqAnswer(text);
+  if (faq) {
+    return answerFaqWithoutInterruptingFlow({
+      answer: faq,
+      state,
+      pushName,
+      businessSettings
+    });
   }
 
   if (!state) {

@@ -70,6 +70,72 @@ test('un saludo presenta al asistente y no inicia el registro', async () => {
   assert.doesNotMatch(repeatedGreeting.replies[0], /No pude identificar una opcion/i);
 });
 
+test('responde sobre la parrilla y vuelve al menu cuando no hay un flujo activo', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    text: '¿Tienen parrilla?',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'main_menu');
+  assert.match(result.replies[0], /consumo mínimo/i);
+  assert.match(result.replies[0], /wa\.me\/5493886002759/);
+  assert.match(result.replies[0], /1\. Buscar un turno/i);
+});
+
+test('responde que los peloteros no estan permitidos y conserva la reserva', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_start_time',
+      data: { fecha: todayIsoInBusinessTimeZone() },
+      updatedAt: new Date().toISOString()
+    },
+    text: '¿Se puede llevar un pelotero?',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'ask_start_time');
+  assert.match(result.replies[0], /No está permitido ingresar peloteros/i);
+  assert.match(result.replies[0], /¿A qué hora querés comenzar\?/i);
+});
+
+test('responde por las pecheras y repite la pregunta pendiente', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_fecha',
+      data: {},
+      updatedAt: new Date().toISOString()
+    },
+    text: '¿Hay pecheras?',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'ask_fecha');
+  assert.match(result.replies[0], /Sí, contamos con pecheras/i);
+  assert.match(result.replies[0], /¿Qué fecha querés reservar\?/i);
+});
+
+test('responde consultas durante el registro sin perder el dato pendiente', async () => {
+  const result = await handleRegistrationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_register_email',
+      data: { phone: '5493884104530' },
+      updatedAt: new Date().toISOString()
+    },
+    text: '¿Hay estacionamiento?',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.state?.step, 'ask_register_email');
+  assert.match(result.replies[0], /consulta específica/i);
+  assert.match(result.replies[0], /wa\.me\/5493886002759/);
+  assert.match(result.replies[0], /pasame tu correo electrónico/i);
+});
+
 test('un cliente registrado es saludado con el nombre normalizado de la base', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

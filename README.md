@@ -262,6 +262,7 @@ El bot:
 - envia la invitacion personalizada, el reglamento y el contacto `https://wa.me/5493886002759`; las imagenes se encuentran en `assets/birthday`
 - responde consultas como `mis reservas`, `mis turnos`, `ver reservas` o `consultar turno`; combina turnos pasados y futuros, elimina duplicados y muestra hasta 5 reservas ordenadas desde la fecha y hora mas recientes
 - despues de elegir fecha pregunta a que hora quiere comenzar; busca ese horario en todas las canchas compatibles y, si no existe exacto o se ocupa antes de confirmar, muestra primero los horarios mas cercanos para la misma fecha y duracion
+- responde consultas frecuentes sobre las condiciones del lugar sin interrumpir la reserva o el registro; para dudas no definidas deriva al contacto `https://wa.me/5493886002759`
 - registra clientes nuevos cuando escriben `registrarme` o cuando quieren reservar con un telefono no registrado
 - si el email o nombre ya existen en la API, el endpoint `crear_cliente` puede actualizar/asociar el telefono en vez de crear un duplicado
 

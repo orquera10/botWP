@@ -263,7 +263,7 @@ function formatCanchas(canchas) {
       const precio = Number(cancha.precio || 0);
       const unidad = cancha.precio_unidad || 'hora';
       const duracion = cancha.duracion_fija ? ` (${cancha.duracion_fija} hs)` : '';
-      return `${index + 1}. ${cancha.nombre}${duracion} - $${precio} / ${unidad}`;
+      return `${index + 1}. ${cancha.nombre}${duracion} - $${precio} / ${unidad}${cancha.tiene_precios_horarios ? " (base; varia por horario)" : ""}`;
     })
     .concat('0. Volver')
     .join('\n');
@@ -278,7 +278,7 @@ function formatCourtPrices(canchas) {
     const unit = String(cancha.precio_unidad || 'hora').trim().replace(/^por\s+/i, '');
     const duration = cancha.duracion_fija ? ` (${cancha.duracion_fija} hs)` : '';
 
-    return `• ${cancha.nombre}${duration}: $${formattedPrice} por ${unit}`;
+    return `• ${cancha.nombre}${duration}: $${formattedPrice} por ${unit}${cancha.tiene_precios_horarios ? " (precio base; consulta la tarifa de tu turno)" : ""}`;
   });
 
   return lines.length
@@ -286,22 +286,42 @@ function formatCourtPrices(canchas) {
     : 'En este momento no pude encontrar precios de canchas configurados.';
 }
 
+function validAmount(value) {
+  return value !== null && value !== undefined && value !== ''
+    && Number.isFinite(Number(value)) && Number(value) >= 0;
+}
+
+function formatPriceAmount(value) {
+  return `$${Number(value).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
+}
+
+function slotPriceText(slot) {
+  if (!validAmount(slot?.total)) return '';
+  const total = Number(slot.total);
+  const saving = validAmount(slot.total_base) ? Number(slot.total_base) - total : 0;
+  return `${formatPriceAmount(total)} total${saving > 0 ? ` - Promo: ahorr\u00e1s ${formatPriceAmount(saving)}` : ''}`;
+}
+
+function slotDescription(slot) {
+  return [slot.label || `${slot.inicio} a ${slot.fin}`, slotPriceText(slot)].filter(Boolean).join(' - ');
+}
+
 function formatSlots(slots) {
   return slots
-    .map((slot, index) => `${index + 1}. ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
+    .map((slot, index) => `${index + 1}. ${slotDescription(slot)}`)
     .concat('0. Volver')
     .join('\n');
 }
 
 function formatSlotsForAvailability(slots) {
   return slots
-    .map((slot) => `- ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
+    .map((slot) => `- ${slotDescription(slot)}`)
     .join('\n');
 }
 
 function formatAlternativeSlots(slots) {
   return slots
-    .map((slot, index) => `${index + 1}. ${slot.cancha.nombre} - ${slot.label || `${slot.inicio} a ${slot.fin}`}`)
+    .map((slot, index) => `${index + 1}. ${slot.cancha.nombre} - ${slotDescription(slot)}`)
     .concat('0. Volver')
     .join('\n');
 }
@@ -2034,6 +2054,8 @@ async function continueFlow({
           reserva.mercadopago?.init_point
             ? 'Para confirmar tu reserva, accede al siguiente link y paga la seña:'
             : 'Tu reserva quedó pendiente de confirmación.',
+          validAmount(reserva.reserva?.total_cancha) ? `Total del turno: ${formatPriceAmount(reserva.reserva.total_cancha)}` : '',
+          validAmount(reserva.reserva?.senia) ? `Se\u00f1a a pagar: ${formatPriceAmount(reserva.reserva.senia)}` : '',
           reserva.mercadopago?.init_point || '',
           'La reserva se confirmará únicamente cuando se acredite el pago.',
           reserva.mercadopago?.init_point
@@ -2057,9 +2079,11 @@ function summaryMessage(data) {
     `Fecha: ${displayDate(data.fecha)}`,
     `Horario: ${data.slot?.label || `${data.slot?.inicio} a ${data.slot?.fin}`}`,
     `Duracion: ${data.duracion} hs`,
+    slotPriceText(data.slot),
+    validAmount(data.slot?.minimo_senia) ? `Se\u00f1a: ${formatPriceAmount(data.slot.minimo_senia)}` : '',
     `Nombre: ${data.nombre}`,
     `Email: ${data.email}`
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export async function handleReservationFlow(input) {

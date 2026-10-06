@@ -945,3 +945,91 @@ test('genera la invitacion solamente con el nombre detectado y adjunta el reglam
   assert.ok(result.media.every(media => !/base/i.test(media.fileName)));
   assert.match(result.afterMediaReplies[0], /wa\.me\/5493886002759/);
 });
+
+
+function priceState(step, slot, extra = {}) {
+  return {
+    step,
+    updatedAt: new Date().toISOString(),
+    data: {
+      nombre: 'Cliente Prueba', email: 'cliente@example.com', phone: '5493884104530',
+      cancha: { id: 5, nombre: 'Cancha 1', precio: 48000 },
+      fecha: todayIsoInBusinessTimeZone(), duracion: 2,
+      slot, slots: [slot], ...extra
+    }
+  };
+}
+
+const promotionalSlot = {
+  fecha: todayIsoInBusinessTimeZone(), inicio: '14:00', fin: '16:00', label: '14:00 a 16:00',
+  total: 60000, total_base: 96000, minimo_senia: 18000
+};
+
+test('los horarios muestran el total de la duracion elegida y el ahorro', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput, state: priceState('ask_slot', promotionalSlot), text: '99', reservasApi: fakeApi()
+  });
+  assert.match(result.replies.join('\n'), /14:00 a 16:00 - \$60\.000 total/);
+  assert.match(result.replies.join('\n'), /Promo: ahorr\u00e1s \$36\.000/);
+});
+
+test('las alternativas mantienen el precio de su propia cancha', async () => {
+  const alternative = {...promotionalSlot, cancha: {id: 6, nombre: 'Cancha 2'}};
+  const result = await handleReservationFlow({
+    ...baseInput, state: priceState('ask_alternative_slot', promotionalSlot, {alternativeSlots: [alternative]}),
+    text: '99', reservasApi: fakeApi()
+  });
+  assert.match(result.replies.join('\n'), /Cancha 2 - 14:00 a 16:00 - \$60\.000 total/);
+});
+
+test('el resumen previo muestra tarifa y senia de la API sin multiplicar otra vez', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput, state: priceState('ask_terms', promotionalSlot), text: 'si acepto', reservasApi: fakeApi()
+  });
+  assert.equal(result.state.step, 'ask_confirm');
+  assert.match(result.replies.join('\n'), /\$60\.000 total/);
+  assert.match(result.replies.join('\n'), /Se\u00f1a: \$18\.000/);
+  assert.doesNotMatch(result.replies.join('\n'), /120\.000/);
+});
+
+test('una tarifa mayor al precio base no se anuncia como promo', async () => {
+  const slot = {...promotionalSlot, total: 110000};
+  const result = await handleReservationFlow({
+    ...baseInput, state: priceState('ask_slot', slot), text: '99', reservasApi: fakeApi()
+  });
+  assert.match(result.replies.join('\n'), /\$110\.000 total/);
+  assert.doesNotMatch(result.replies.join('\n'), /Promo|ahorr/);
+});
+
+test('sigue funcionando con horarios antiguos sin importes', async () => {
+  const slot = {fecha: promotionalSlot.fecha, inicio: '14:00', fin: '16:00', label: '14:00 a 16:00'};
+  const result = await handleReservationFlow({
+    ...baseInput, state: priceState('ask_terms', slot), text: 'si acepto', reservasApi: fakeApi()
+  });
+  assert.equal(result.state.step, 'ask_confirm');
+  assert.doesNotMatch(result.replies.join('\n'), /NaN|\$0|Promo|Se\u00f1a:/);
+});
+
+test('el enlace de pago usa los importes finales recalculados por el servidor', async () => {
+  let payload;
+  const result = await handleReservationFlow({
+    ...baseInput, state: priceState('ask_confirm', promotionalSlot), text: 'si',
+    reservasApi: fakeApi({crearReserva: async data => {
+      payload = data;
+      return {reserva: {total_cancha: 62000, senia: 18600}, mercadopago: {init_point: 'https://example.com/pagar'}};
+    }})
+  });
+  assert.equal(result.state, null);
+  assert.match(result.replies.join('\n'), /Total del turno: \$62\.000/);
+  assert.match(result.replies.join('\n'), /Se\u00f1a a pagar: \$18\.600/);
+  assert.equal(payload.monto_senia, undefined);
+  assert.equal(payload.total, undefined);
+});
+
+test('la consulta general identifica el precio base cuando hay tarifas horarias', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput, text: 'precios',
+    reservasApi: fakeApi({listarCanchas: async () => [{id: 5, nombre: 'Cancha 1', precio: 48000, precio_unidad: 'hora', tiene_precios_horarios: true}]})
+  });
+  assert.match(result.replies.join('\n'), /precio base; consulta la tarifa de tu turno/);
+});

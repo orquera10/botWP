@@ -292,3 +292,17 @@ Se guarda:
 - payload raw del mensaje en `jsonb`
 
 Las credenciales internas de Baileys siguen en disco dentro de `sessions/clients/<cliente>`. PostgreSQL guarda la metadata y el historial. Esto evita tocar de entrada el storage interno de autenticacion de Baileys, que es la parte mas sensible.
+
+## Precios de turnos por día y horario
+
+El bot muestra `total`, `total_base` y `minimo_senia` recibidos en cada horario
+por la API PHP. Marca como promoción únicamente un total menor al total base.
+Estos importes ya corresponden a la duración elegida; no se multiplican de nuevo.
+El resumen previo muestra el total y la seña, y el enlace de pago muestra los
+importes finales de `reserva.total_cancha` y `reserva.senia`.
+
+Para activar esta visualización, actualizar primero la web PHP con la API que
+incluye esos campos y luego desplegar/reiniciar el bot. El bot sigue aceptando
+respuestas antiguas sin importes, pero en ese caso no muestra un precio estimado.
+No se debe enviar un importe calculado por el bot al crear la reserva: el servidor
+PHP calcula la tarifa vigente y la seña.

@@ -44,6 +44,15 @@ import {
 import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
+import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
+
+const aiStates = new Map();
+const aiCleanupTimer = setInterval(() => {
+  for (const [key, state] of aiStates) {
+    if (Date.now() - state.updatedAt > 3_600_000) aiStates.delete(key);
+  }
+}, 600_000);
+aiCleanupTimer.unref();
 
 const PORT = Number(process.env.PORT || 3000);
 const LEGACY_SESSION_DIR = process.env.SESSION_DIR || 'sessions/whatsapp';
@@ -531,6 +540,11 @@ async function connectSession(clientName) {
 
       await linkClientAlias(session, aliasJid, canonicalJid);
 
+      if (aiEnabled(session.businessSettings) && session.businessFlows.includes('reservas')) {
+        await sendBotText(session, aliasJid, '¡Gracias! Ya tengo tu número. Contame qué cancha y horario te interesan, o qué necesitás consultar.');
+        return;
+      }
+
       const reservasApi = createReservasApi({
         baseUrl: session.businessApiUrl,
         apiKey: session.businessApiKey,
@@ -704,8 +718,32 @@ async function connectSession(clientName) {
             }
           }
 
+          let handledByAi = false;
+          if (!handledByAdminFlow && session.businessFlows.includes('reservas') && aiEnabled(session.businessSettings)) {
+            handledByAi = true;
+            const key = `${session.id}:${session.businessId}:${canonicalConversationJid}`;
+            await serializeAiConversation(key, async () => {
+              const state = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
+              const output = await handleAiConversation({
+                state, text: payload.text, canonicalJid: canonicalConversationJid,
+                reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
+                registrationAvailable: session.businessFlows.includes('registro'),
+                onBeforeWrite: async consumedState => {
+                  aiStates.set(key, consumedState);
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);
+                }
+              });
+              aiStates.set(key, output.state);
+              await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
+              await sendFlowOutput(session, payload.from, output);
+              if (!canonicalConversationJid?.endsWith('@s.whatsapp.net') && await shouldAskForLidVerification(session.id, payload.from)) {
+                await sendBotText(session, payload.from, buildLidVerificationMessage(session));
+              }
+            });
+          }
+
           let handledByRegistrationFlow = false;
-          if (!handledByAdminFlow && session.businessFlows.includes('registro')) {
+          if (!handledByAdminFlow && !handledByAi && session.businessFlows.includes('registro')) {
             const registrationState = await getBotFlowState(session.id, canonicalConversationJid, 'registration');
             const registrationResult = await handleRegistrationFlow({
               state: registrationState,
@@ -735,7 +773,7 @@ async function connectSession(clientName) {
             }
           }
 
-          if (!handledByAdminFlow && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
+          if (!handledByAdminFlow && !handledByAi && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
             let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
             const flowResult = await handleReservationFlow({
               state: reservationState,

@@ -4,6 +4,48 @@ Servidor Node.js con Express y Baileys para conectar varias cuentas de WhatsApp 
 
 > Baileys no es la API oficial de WhatsApp Business. Usa el protocolo de WhatsApp Web y conviene usarlo con cuidado, sin spam ni automatizaciones abusivas.
 
+## Conversación con Gemini
+
+El modo conversacional atiende consultas sobre canchas, condiciones, disponibilidad,
+precios, turnos propios, registro, reservas con seña e invitaciones de cumpleaños.
+No permite cancelar ni modificar reservas. La agenda y los informes administrativos
+mantienen su flujo y autorización actuales.
+
+Para activarlo, configurá estas variables en `.env` y reiniciá el servidor:
+
+```env
+AI_CONVERSATION_ENABLED=true
+GEMINI_API_KEY=tu-clave-de-google-ai-studio
+GEMINI_MODEL=gemini-2.5-flash
+AI_MAX_CALLS_PER_HOUR=60
+AI_MAX_TOTAL_CALLS_PER_HOUR=600
+```
+
+Se activa para perfiles con el módulo `reservas`. Con `settings.aiEnabled=false`
+se puede deshabilitar por negocio. `settings.aiBusinessInfo` permite proporcionar
+ubicación, servicios y datos adicionales del negocio; no incluir claves ni secretos.
+Las credenciales de reservas configuradas por negocio se reutilizan.
+
+El servidor verifica el horario y muestra condiciones, precio, seña y datos antes
+de reservar. El siguiente mensaje debe confirmar explícitamente (por ejemplo,
+“sí, acepto”); cualquier otra respuesta descarta esa confirmación pendiente y
+permite preparar otra propuesta. La reserva solo se confirma al acreditar el pago.
+El registro independiente también requiere confirmación. Las consultas personales
+usan el teléfono vinculado por WhatsApp, no números elegidos por el modelo.
+
+El historial conserva seis intercambios y vence a los 30 minutos de inactividad.
+Funciona en memoria sin PostgreSQL y se guarda también en PostgreSQL cuando está
+configurado. Los límites cuentan llamadas a Gemini, incluyendo consultas a herramientas;
+una conversación puede necesitar varias llamadas por mensaje. El límite total es por
+proceso y se reinicia al reiniciar el servidor; no equivale a un presupuesto monetario.
+Configurar también los controles de cuota/facturación del proveedor.
+Después de tres consultas ajenas consecutivas se responde sin IA hasta que aparezca
+una referencia al negocio. Los errores de Gemini producen una respuesta fija.
+
+Para volver al modo anterior, configurá `AI_CONVERSATION_ENABLED=false` y reiniciá.
+La integración se prueba con respuestas simuladas en `npm test`; validar con una
+cuenta de WhatsApp de prueba y una clave real antes de habilitarla para clientes.
+
 ## Requisitos
 
 - Node.js 20 o superior.

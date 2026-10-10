@@ -37,6 +37,7 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
     try {
       response = await fetch(url, {
         method,
+        signal: AbortSignal.timeout(15_000),
         headers: {
           'Content-Type': 'application/json',
           [authHeader]: apiKey
@@ -45,7 +46,7 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
       });
       break;
     } catch (error) {
-      if (attempt === 2) throw error;
+      if (attempt === 2 || method !== 'GET') throw error;
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }

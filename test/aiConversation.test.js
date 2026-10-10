@@ -16,6 +16,57 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('an occupied football slot offers a compatible court on the same date and keeps its own price', async () => {
+  const requests = [];
+  const queries = [];
+  const state = { updatedAt: now, requestedDate: '2026-10-11', customer: { exists: true, nombre: 'Ana', email: 'ana@example.com' } };
+  const api = {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }, { id: 2, nombre: 'Fútbol 6' }, { id: 3, nombre: 'Cumpleaños', duracion_fija: 3 }],
+    consultarDisponibilidad: async args => {
+      queries.push(args);
+      assert.equal(args.fecha, '2026-10-11');
+      return [{ fecha: args.fecha, inicio: args.cancha === 1 ? '16:00' : '15:00', fin: args.cancha === 1 ? '17:00' : '16:00', total: args.cancha === 1 ? 200 : 300, minimo_senia: args.cancha === 1 ? 60 : 90 }];
+    },
+    listarTerminos: async () => ['Condiciones de Fútbol 6'],
+    crearReserva: () => assert.fail('An alternative still requires summary and terms acceptance')
+  };
+  const offered = await handleAiConversation({ ...base, text: 'somos 10 y sería para las 15 una hora', state, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1 }), reply('En Fútbol 5 está ocupado, pero en Fútbol 6 hay de 15 a 16 por $300. ¿Te sirve?')], requests) });
+  assert.deepEqual(queries.map(q => q.cancha), [1, 2]);
+  const verified = requests[1].contents.at(-1).parts[0].functionResponse.response.result;
+  assert.equal(verified.alternativa.cancha, 2);
+  assert.equal(verified.alternativa.slot.total, 300);
+  assert.equal(offered.state.availability.cancha, 1);
+  assert.equal(offered.state.requestedDate, '2026-10-11');
+  const accepted = await handleAiConversation({ ...base, text: 'dale', state: offered.state, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', { fecha: '2026-10-15', cancha: 1, duracion: 1, hora_inicio: '15:00' })]) });
+  assert.equal(accepted.state.pending.cancha, 2);
+  assert.equal(accepted.state.pending.fecha, '2026-10-11');
+  assert.match(accepted.replies[0], /Total: \$300/);
+  assert.match(accepted.replies[0], /Seña: \$90/);
+});
+
+test('other times keep the chosen day and do not keep retrying the occupied hour', async () => {
+  const requests = [];
+  let queries = 0;
+  const output = await handleAiConversation({ ...base, text: 'para mañana quiero otro horario', state: { updatedAt: now, requestedDate: '2026-10-11', requestedHour: '15:00' }, reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async args => { queries++; assert.equal(args.fecha, '2026-10-11'); return [{ fecha: args.fecha, inicio: '16:00' }, { fecha: args.fecha, inicio: '17:00' }]; }
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-15', cancha: 1, hora_inicio: '15:00', duracion: 1 }), reply('Mañana hay de 4 a 6 de la tarde. ¿Te sirve?')], requests) });
+  assert.equal(queries, 1);
+  assert.equal(output.state.requestedHour, undefined);
+  const verified = requests[1].contents.at(-1).parts[0].functionResponse.response.result;
+  assert.deepEqual(verified.franjas, ['de 4 a 6 de la tarde']);
+  assert.equal(verified.alternativa, null);
+});
+
+test('an occupied slot does not search later dates without permission or smaller courts', async () => {
+  const queries = [];
+  const output = await handleAiConversation({ ...base, text: 'somos 16 para las 15', reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 7/8' }, { id: 2, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async args => { queries.push(args); return []; }
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1 }), reply('A esa hora no hay lugar para 16. ¿Querés consultar otro horario?')]) });
+  assert.equal(queries.length, 1);
+  assert.equal(output.state.alternativeOffer, undefined);
+});
 test('a real voice transcription resolves Tuesday and five in the afternoon as 17:00', async () => {
   const requests = [];
   const output = await handleAiConversation({ ...base, text: 'Hola, somos 10 y queremos una cancha para el martes que viene a las 5 de la tarde.', reservasApi: {
@@ -167,7 +218,7 @@ test('an occupied birthday hour proactively offers the nearest day and only sele
     crearReserva: () => assert.fail('Offering or selecting an alternative cannot create a reservation')
   };
   const state = { updatedAt: now, requestedDate: '2026-10-21', customer: { exists: true, nombre: 'Ana', email: 'ana@example.com' } };
-  const offered = await handleAiConversation({ ...base, text: 'mmm necesito para las 17', state, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('El viernes 23 de octubre hay de 5 de la tarde a 8 de la noche. ?Te sirve?')]) });
+  const offered = await handleAiConversation({ ...base, text: 'necesito para las 17, si no otro día a esa hora', state, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('El viernes 23 de octubre hay de 5 de la tarde a 8 de la noche. ¿Te sirve?')]) });
   assert.deepEqual(dates, ['2026-10-21', '2026-10-22', '2026-10-23']);
   assert.match(offered.replies[0], /viernes 23 de octubre/);
   assert.match(offered.replies[0], /5 de la tarde a 8 de la noche/);
@@ -183,7 +234,7 @@ test('an occupied birthday hour proactively offers the nearest day and only sele
 
 test('automatic alternative search stops after seven days', async () => {
   let queries = 0;
-  const result = await handleAiConversation({ ...base, text: 'para las 17', reservasApi: { listarCanchas: async () => [{ id: 1 }], consultarDisponibilidad: async () => { queries++; return []; } }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('No encontré ese horario en los próximos siete días.')]) });
+  const result = await handleAiConversation({ ...base, text: 'para las 17 o si no otro día', reservasApi: { listarCanchas: async () => [{ id: 1 }], consultarDisponibilidad: async () => { queries++; return []; } }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('No encontré ese horario en los próximos siete días.')]) });
   assert.equal(queries, 8);
   assert.equal(result.state.alternativeOffer, undefined);
 });

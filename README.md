@@ -11,6 +11,12 @@ precios, turnos propios, registro, reservas con seña e invitaciones de cumplea�
 No permite cancelar ni modificar reservas. La agenda y los informes administrativos
 mantienen su flujo y autorización actuales.
 
+Si el horario elegido está ocupado, se prioriza otra cancha de fútbol compatible
+para el mismo día y hora, conservando sus propios importes. Después se ofrecen
+otros horarios reales de ese día. Se buscan otras fechas solo si el cliente lo pide.
+Las franjas se calculan por cancha y duración sin unir huecos ocupados; aceptar una
+alternativa prepara su resumen y condiciones, sin reservar hasta aceptar y pagar.
+
 Para activarlo, configurá estas variables en `.env` y reiniciá el servidor:
 
 ```env

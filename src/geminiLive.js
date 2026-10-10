@@ -13,6 +13,7 @@ export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, t
   let text = '';
   let usage;
   let toolPending = false;
+  let inputTranscript = '';
 
   function complete(error, content) {
     if (!waiting) return;
@@ -39,6 +40,7 @@ export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, t
     const body = JSON.parse(options.body);
     transcript = '';
     text = '';
+    inputTranscript = '';
     return new Promise((resolve, reject) => {
       waiting = { resolve, reject };
       timer = setTimeout(() => fail('Gemini Live timeout'), timeoutMs);
@@ -58,7 +60,8 @@ export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, t
         systemInstruction: body.systemInstruction,
         tools: body.tools,
         generationConfig: { responseModalities: ['AUDIO'], temperature: 0.3, maxOutputTokens: 1200 },
-        outputAudioTranscription: {}
+        outputAudioTranscription: {},
+        ...(body.audioPcm ? { inputAudioTranscription: {}, realtimeInputConfig: { automaticActivityDetection: { disabled: true } } } : {})
       } }));
       // Serialize events so a delayed tool result cannot race with subsequent frames.
       socket.on('message', raw => {
@@ -66,7 +69,16 @@ export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, t
         try {
           const data = JSON.parse(raw.toString());
           if (data.error) { fail(`Gemini Live ${data.error.status || 'error'}`); return; }
-          if (data.setupComplete) send({ clientContent: { turns: body.contents, turnComplete: true } });
+          if (data.setupComplete) {
+            if (body.audioPcm) {
+              send({ realtimeInput: { activityStart: {} } });
+              const pcm = Buffer.from(body.audioPcm, 'base64');
+              for (let offset = 0; offset < pcm.length; offset += 3200) {
+                send({ realtimeInput: { audio: { data: pcm.subarray(offset, offset + 3200).toString('base64'), mimeType: 'audio/pcm;rate=16000' } } });
+              }
+              send({ realtimeInput: { activityEnd: {} } });
+            } else send({ clientContent: { turns: body.contents, turnComplete: true } });
+          }
           if (data.usageMetadata) usage = data.usageMetadata;
           if (data.toolCall?.functionCalls?.length) {
             toolPending = true;
@@ -74,13 +86,14 @@ export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, t
           }
           if (data.toolCallCancellation) { fail('Gemini Live tool call cancelled'); return; }
           const server = data.serverContent;
+          if (server?.inputTranscription?.text) inputTranscript += server.inputTranscription.text;
           if (server?.outputTranscription?.text) transcript += server.outputTranscription.text;
           for (const part of server?.modelTurn?.parts || []) {
             if (part.text && !part.thought) text += part.text;
           }
           // Audio chunks are intentionally discarded; WhatsApp receives the transcript.
           if (server?.turnComplete && !toolPending) {
-            const answer = transcript.trim() || text.trim();
+            const answer = body.audioPcm ? inputTranscript.trim() : transcript.trim() || text.trim();
             if (!answer) { fail('Gemini Live empty transcript'); return; }
             complete(null, { role: 'model', parts: [{ text: answer }] });
           }

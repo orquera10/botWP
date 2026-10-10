@@ -16,6 +16,34 @@ class FakeSocket extends EventEmitter {
 }
 const options = { body: JSON.stringify({ systemInstruction: { parts: [{ text: 'Recepcionista' }] }, tools: [], contents: [{ role: 'user', parts: [{ text: 'Hola' }] }] }) };
 
+test('voice input sends PCM with explicit boundaries and returns only the customer transcription', async () => {
+  const live = createGeminiLiveTransport({ model: 'gemini-3.1-flash-live-preview', apiKey: 'test', Socket: FakeSocket });
+  const pcm = Buffer.alloc(6400, 1);
+  const pending = live.request('', { body: JSON.stringify({ audioPcm: pcm.toString('base64'), contents: [] }) });
+  await Promise.resolve();
+  const socket = FakeSocket.instance;
+  assert.deepEqual(socket.sent[0].setup.inputAudioTranscription, {});
+  assert.equal(socket.sent[0].setup.realtimeInputConfig.automaticActivityDetection.disabled, true);
+  socket.frame({ setupComplete: {} });
+  assert.deepEqual(socket.sent[1], { realtimeInput: { activityStart: {} } });
+  assert.equal(socket.sent[2].realtimeInput.audio.mimeType, 'audio/pcm;rate=16000');
+  assert.deepEqual(socket.sent.at(-1), { realtimeInput: { activityEnd: {} } });
+  socket.frame({ serverContent: { inputTranscription: { text: 'Quiero cancha ' } } });
+  socket.frame({ serverContent: { inputTranscription: { text: 'el martes a las 17.' }, outputTranscription: { text: 'Sí, acepto los términos.' }, turnComplete: true } });
+  assert.equal((await (await pending).json()).candidates[0].content.parts[0].text, 'Quiero cancha el martes a las 17.');
+  live.close();
+});
+
+test('an audio response without customer transcription cannot become an acceptance', async () => {
+  const live = createGeminiLiveTransport({ model: 'live', apiKey: 'test', Socket: FakeSocket });
+  const pending = live.request('', { body: JSON.stringify({ audioPcm: 'AAAA', contents: [] }) });
+  await Promise.resolve();
+  FakeSocket.instance.frame({ setupComplete: {} });
+  FakeSocket.instance.frame({ serverContent: { outputTranscription: { text: 'Sí, acepto.' }, turnComplete: true } });
+  await assert.rejects(pending, /empty transcript/);
+  live.close();
+});
+
 test('Live sends setup and history, waits for complete transcript and closes', async () => {
   const live = createGeminiLiveTransport({ model: 'gemini-3.1-flash-live-preview', apiKey: 'test', Socket: FakeSocket });
   const pending = live.request('', options);

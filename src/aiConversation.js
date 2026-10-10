@@ -70,7 +70,11 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   }
   const requestedHour = normalize(text).match(/\b(?:a las|para las|de)\s+(\d{1,2})(?::(\d{2}))?\b/);
   if (requestedHour && Number(requestedHour[1]) < 24 && Number(requestedHour[2] || 0) < 60) {
-    next.requestedHour = `${requestedHour[1].padStart(2, '0')}:${requestedHour[2] || '00'}`;
+    let hour = Number(requestedHour[1]);
+    const suffix = normalize(text).slice(requestedHour.index + requestedHour[0].length);
+    if (/^\s*(?:de la|por la)\s+(?:tarde|noche)\b/.test(suffix) && hour < 12) hour += 12;
+    if (/^\s*(?:de la|por la)\s+(?:manana|madrugada)\b/.test(suffix) && hour === 12) hour = 0;
+    next.requestedHour = `${String(hour).padStart(2, '0')}:${requestedHour[2] || '00'}`;
     delete next.alternativeOffer;
   }
   const range = normalize(text).match(/\bde\s+(\d{1,2})(?::(\d{2}))?\s+a\s+(\d{1,2})(?::(\d{2}))?\b/);

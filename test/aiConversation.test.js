@@ -16,6 +16,16 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('a real voice transcription resolves Tuesday and five in the afternoon as 17:00', async () => {
+  const requests = [];
+  const output = await handleAiConversation({ ...base, text: 'Hola, somos 10 y queremos una cancha para el martes que viene a las 5 de la tarde.', reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async args => { assert.equal(args.fecha, '2026-10-13'); return [{ fecha: args.fecha, inicio: '17:00', total: 400, minimo_senia: 120 }]; }
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1 }), reply('Sí, hay lugar a las 5 de la tarde.')], requests) });
+  assert.equal(output.state.requestedHour, '17:00');
+  assert.equal(output.state.requestedDate, '2026-10-13');
+  assert.equal(requests[1].contents.at(-1).parts[0].functionResponse.response.result.turno_solicitado.inicio, '17:00');
+});
 test('a thank-you after external payment confirmation refreshes the exact ticket before Gemini replies', async () => {
   const requests = [];
   const state = { updatedAt: now, checkout: { ticketId: 123, status: 'pendiente_pago', createdAt: now }, history: [{ role: 'model', parts: [{ text: 'Todavía está pendiente de pago.' }] }] };

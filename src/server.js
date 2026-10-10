@@ -9,6 +9,7 @@ import Pino from 'pino';
 import baileys, {
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
   useMultiFileAuthState
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
@@ -47,6 +48,7 @@ import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
 import { senderPhoneJid } from './whatsappIdentity.js';
 import { handlePendingBirthdayInvitation } from './pendingBirthdayInvitation.js';
+import { getAudioMessage, transcribeVoiceMessage } from './voiceMessages.js';
 
 const aiStates = new Map();
 const aiCleanupTimer = setInterval(() => {
@@ -165,7 +167,7 @@ function isUserVisibleMessage(message) {
   if (message.senderKeyDistributionMessage) return false;
   if (message.messageContextInfo && Object.keys(message).length === 1) return false;
 
-  return Boolean(extractText(message));
+  return Boolean(extractText(message) || getAudioMessage(message));
 }
 
 function buildLidVerificationMessage(session) {
@@ -618,7 +620,7 @@ async function connectSession(clientName) {
           type,
           from: message.key.remoteJid,
           pushName: message.pushName,
-          text: extractText(message.message),
+          text: extractText(message.message) || (getAudioMessage(message.message) ? '[Nota de voz]' : ''),
           timestamp: message.messageTimestamp,
           raw: message
         };
@@ -694,6 +696,11 @@ async function connectSession(clientName) {
           });
           let handledByAdminFlow = false;
 
+          if (getAudioMessage(message.message) && (!session.businessFlows.includes('reservas') || !aiEnabled(session.businessSettings))) {
+            await sendBotText(session, payload.from, 'Por ahora necesito que me escribas tu consulta para poder ayudarte.');
+            continue;
+          }
+
           if (session.businessFlows.includes('admin_agenda')) {
             const senderPhone = canonicalConversationJid?.endsWith('@s.whatsapp.net')
               ? canonicalConversationJid.split('@')[0].replace(/\D/g, '')
@@ -731,6 +738,18 @@ async function connectSession(clientName) {
             handledByAi = true;
             const key = `${session.id}:${session.businessId}:${canonicalConversationJid}`;
             await serializeAiConversation(key, async () => {
+              if (getAudioMessage(message.message)) {
+                try {
+                  payload.text = await transcribeVoiceMessage({ message, key, download: msg => downloadMediaMessage(msg, 'buffer', { options: { timeout: 15_000, maxContentLength: 5 * 1024 * 1024 } }, { logger, reuploadRequest: socket.updateMediaMessage }) });
+                } catch (error) {
+                  logger.warn({ clientId: session.id, category: error.message === 'Audio too long' ? 'audio_limit' : 'audio_unavailable' }, 'No se pudo procesar la nota de voz');
+                  const reply = error.message === 'Audio too long' ? 'Mandame un audio de hasta un minuto, por favor, o escribime tu consulta.'
+                    : error.message === 'Audio quota reached' ? 'Llegamos al límite de audios por esta hora. Podés escribirme y seguimos por acá.'
+                      : 'No pude entender el audio ahora. ¿Me lo escribís o probás con una nota más corta?';
+                  await sendBotText(session, payload.from, reply);
+                  return;
+                }
+              }
               const state = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
               const invitationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
               const invitationOutput = await handlePendingBirthdayInvitation({

@@ -29,6 +29,17 @@ restaura el historial breve y cierra la conexión al terminar, incluso ante erro
 Live genera audio aunque solo se use el texto: su cuota y facturación son propias.
 Después de actualizar esta versión ejecutar `npm install` y reiniciar el servidor.
 
+Con un modelo Live también recibe notas de voz de WhatsApp de hasta un minuto
+y 5 MB, las transcribe con Gemini y responde por escrito. La transcripción entra
+en el mismo flujo que un mensaje de texto, conservando historial, validaciones,
+aceptación de términos y verificación de pago. Solo se utiliza lo que dijo el
+cliente: la respuesta de audio del modelo no se interpreta como una aceptación.
+Se permiten hasta 10 notas por remitente y hora; la transcripción requiere una
+llamada adicional a Gemini y puede reintentarse una vez ante fallos temporales.
+`ffmpeg-static`, instalado con `npm install`, convierte OGG/Opus a PCM de 16 kHz.
+No se guardan archivos de audio en disco. Si no puede entender la nota, pide texto
+o un audio más corto sin ejecutar reservas. Con la IA desactivada se pide texto.
+
 Se activa para perfiles con el módulo `reservas`. Con `settings.aiEnabled=false`
 se puede deshabilitar por negocio. `settings.aiBusinessInfo` permite proporcionar
 ubicación, servicios y datos adicionales del negocio; no incluir claves ni secretos.

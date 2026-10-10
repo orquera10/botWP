@@ -2,6 +2,7 @@ import { createBirthdayInvitation, BIRTHDAY_RULES_IMAGE } from './birthdayInvita
 import { createGeminiLiveTransport, isLiveModel } from './geminiLive.js';
 import { friendlyDate, friendlyRange, availabilityRanges, numericBookingSummary } from './conversationFormatting.js';
 import { upcomingWeekday } from './conversationDates.js';
+import { needsCourtSelection } from './courtSelection.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -179,6 +180,12 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   // Any other message invalidates the confirmation, preventing stale or changed bookings.
   delete next.pending;
   if (String(text).length > 2000) return result(['Mandame una consulta más breve sobre las canchas o reservas, por favor.']);
+  if (needsCourtSelection(text, next.history)) {
+    const question = '¡Dale! ¿Cuántos van a jugar?';
+    next.history = [...next.history, { role: 'user', parts: [{ text: String(text) }] }, { role: 'model', parts: [{ text: question }] }].slice(-12);
+    next.offTopic = 0;
+    return result([question]);
+  }
   if (next.quota.calls >= limit) return result(['Llegamos al límite de consultas por esta hora. Podés volver a escribir más tarde o contactar al negocio.']);
   if ((next.offTopic || 0) >= 3 && !/cancha|reserv|turno|precio|horario|cumple|seña|sena|ubicaci|disponib/i.test(text)) return result([redirect]);
 

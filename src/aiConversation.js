@@ -1,5 +1,6 @@
 import { createBirthdayInvitation, BIRTHDAY_RULES_IMAGE } from './birthdayInvitation.js';
 import { createGeminiLiveTransport, isLiveModel } from './geminiLive.js';
+import { friendlyDate, friendlyTime, friendlyRange, chronologicalSlots } from './conversationFormatting.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -113,7 +114,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const catalogUrl = businessSettings.catalogUrl || process.env.CATALOG_URL || '';
   const paymentMessage = checkout => [
     'Para confirmar el turno tenés que pagar la seña por Mercado Pago. Todavía está pendiente de pago.',
-    checkout.booking ? `${checkout.booking.nombre} · ${checkout.booking.fecha} · ${checkout.booking.hora_inicio} (${checkout.booking.duracion} hs)` : '',
+    checkout.booking ? `${checkout.booking.nombre} · ${friendlyDate(checkout.booking.fecha)} · ${friendlyRange(checkout.booking.hora_inicio, checkout.booking.duracion)} (${checkout.booking.duracion} hs)` : '',
     checkout.total != null ? `Total del turno: $${checkout.total}` : '',
     checkout.senia != null ? `Seña a pagar: $${checkout.senia}` : '',
     checkout.url || 'No recibí un enlace de pago. Contactá al negocio para verificar la solicitud.',
@@ -128,7 +129,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
       if (!turno) return 'No pude encontrar esa solicitud entre tus turnos. No puedo confirmar el pago; contactá al negocio para revisarlo.';
       if (turno?.estado === 'confirmada') {
         next.checkout.status = 'confirmada';
-        return `¡Se acreditó la seña! Tu reserva está confirmada en el sistema.\n${turno.cancha || ''} · ${turno.fecha_label || turno.fecha} · ${turno.hora_inicio} a ${turno.hora_fin}`;
+        return `¡Se acreditó la seña! Tu reserva está confirmada en el sistema.\n${turno.cancha || ''} · ${friendlyDate(turno.fecha)} · ${friendlyRange(turno.hora_inicio, 1, turno.hora_fin)}`;
       }
       if (turno?.estado === 'cancelada' || now - next.checkout.createdAt >= 10 * 60_000) return 'La solicitud ya no está vigente o figura cancelada. Consultemos disponibilidad antes de generar otro enlace.';
       return paymentMessage(next.checkout);
@@ -186,6 +187,7 @@ Solo podés ayudar con las canchas y sus reservas, condiciones, servicios, cumpl
 Canchas actuales consultadas al sistema: ${JSON.stringify(courts || null)}.
 La cantidad de personas que dice el cliente es el TOTAL entre ambos equipos, no la cantidad por equipo. Fútbol 5 incluye 10 jugadores (5 por equipo), Fútbol 6 incluye 12 (6 por equipo), Fútbol 7/8 incluye 16 (hasta 8 por equipo). Para “somos 16” corresponde UNA cancha de Fútbol 7/8: no digas que falta capacidad ni propongas dos canchas. Confirmá cancha y horario con el listado real. Superar jugadores incluidos tiene costo extra según las condiciones; no inventes una prohibición ni el monto extra. No asumas que la Cancha Promo tiene una capacidad determinada si no está informada.
 Usá un tono amable y simple, sin exagerar modismos ni repetir saludos en cada mensaje. Escribí “Fútbol 5”, horarios como “20:00 a 21:00” y precios con “$”. No digas “de 5”, “bancás un toque” ni prometas consultar más tarde: consultá las herramientas en este turno. “De 20 a 21” significa inicio 20:00 y duración 1 hora; “a las 20” o “21” actualizan solo el horario conservando fecha, cancha y duración ya elegidas. Si propusiste fútbol 5 y el cliente respondió con horario, continuá con esa cancha, no vuelvas a preguntar cuál.
+Al hablar con clientes presentá fechas como “el lunes 12 de octubre”, nunca YYYY-MM-DD, y horas como “4 de la tarde” o “2 de la madrugada”. Conservá YYYY-MM-DD y HH:mm únicamente en los argumentos de herramientas. No mezcles 24 horas con pm: 14:00 equivale a 2 de la tarde. No anuncies una franja entera libre si solo verificaste algunos turnos.
 Última consulta real de disponibilidad: ${JSON.stringify(next.availability || null)}. Conservá sus datos al interpretar respuestas breves; volvé a consultar para comprobar disponibilidad actual. Ante un error de parámetros corregí la llamada y reintentá dentro del turno, sin obligar al cliente a repetir lo ya dicho. Un horario no disponible no es un error técnico; ofrecé alternativas reales.
 Fecha elegida explícitamente por el cliente: ${next.requestedDate || 'sin fecha explícita guardada'}. Un cambio de día reemplaza la fecha anterior. Los pagos anteriores no son reservas del nuevo día: nunca reutilices su enlace ni su confirmación para otro turno.
 Hora solicitada: ${next.requestedHour || 'sin hora guardada'}. Si pide un horario ocupado, consultá disponibilidad incluyendo hora_inicio y ofrecé directamente el próximo día con esa misma hora, sin preguntarle primero si quiere otro día. Alternativa ofrecida: ${JSON.stringify(next.alternativeOffer || null)}. ${acceptedAlternative ? 'El cliente acaba de aceptar la alternativa ofrecida: ejecutá preparar_reserva con sus datos para mostrar resumen y términos.' : 'Una alternativa no cambia la fecha elegida hasta que el cliente la acepte.'}
@@ -266,14 +268,14 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               if (hour) {
                 const exact = value.find(slot => slot.fecha === a.fecha && slot.inicio === hour);
                 if (exact) {
-                  direct = `El ${a.fecha} tenemos disponible de ${exact.label || hour} en ${next.availability.nombre}.`;
+                  direct = `Para el ${friendlyDate(exact.fecha)} tenemos de ${friendlyRange(exact.inicio, a.duracion, exact.fin)} en ${next.availability.nombre}.`;
                   if (exact.total != null) direct += ` Total por ${a.duracion} ${a.duracion === 1 ? 'hora' : 'horas'}: $${exact.total}.`;
                   if (exact.minimo_senia != null) direct += ` Seña: $${exact.minimo_senia}.`;
                   direct += ' ¿Querés que prepare el resumen y las condiciones?';
                 }
               } else if (value.length) {
-                const ordered = [...value].sort((left, right) => left.inicio.localeCompare(right.inicio));
-                direct = `El ${a.fecha} hay lugar en ${next.availability.nombre} a las ${ordered.slice(0, 3).map(slot => slot.inicio).join(', ')}${ordered.length > 3 ? ', entre otros horarios' : ''}. ¿A qué hora querés jugar?`;
+                const ordered = chronologicalSlots(value);
+                direct = `Para el ${friendlyDate(a.fecha)} hay lugar en ${next.availability.nombre} a las ${ordered.slice(0, 3).map(slot => `${friendlyTime(slot.inicio)}${slot.fecha !== a.fecha ? ' del día siguiente' : ''}`).join(', ')}${ordered.length > 3 ? ', entre otros horarios' : ''}. ¿A qué hora querés jugar?`;
               }
               if (hour && /^\d{2}:\d{2}$/.test(hour) && !value.some(slot => slot.inicio === hour)) {
                 delete next.alternativeOffer;
@@ -288,7 +290,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
                   if (!alternative) continue;
                   next.alternativeOffer = { ...next.availability, fecha, hora_inicio: hour };
                   const label = new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(date).replace(',', '');
-                  direct = `Para ese día a las ${hour} no hay lugar, pero el ${label} sí tenemos de ${alternative.label || hour}. ¿Te sirve?`;
+                  direct = `Para ese día a las ${friendlyTime(hour)} no hay lugar, pero el ${label} sí tenemos de ${friendlyRange(alternative.inicio, a.duracion, alternative.fin)}. ¿Te sirve?`;
                   break;
                 }
               }
@@ -330,7 +332,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               if (!terms.length) throw new Error('No se pudieron obtener las condiciones');
               next.pending = { fecha: slot.fecha, hora_inicio: slot.inicio, cancha: a.cancha, canchaNombre: cancha.nombre, duracion: a.duracion, cliente: { nombre: a.nombre.trim(), email: a.email.trim() } };
               next.offTopic = 0;
-              direct = `Te resumo antes de generar el pago:\n${cancha.nombre} · ${slot.fecha} · ${slot.label}\nDuración: ${a.duracion} hs\nTotal: $${slot.total}\nSeña: $${slot.minimo_senia}\nA nombre de: ${a.nombre}\nEmail: ${a.email}\n\nCondiciones:\n${terms.map(t => typeof t === 'string' ? t : JSON.stringify(t)).join('\n')}\n\n¿Estás de acuerdo y seguimos con el enlace de Mercado Pago? Podés responder como te quede cómodo, por ejemplo “dale” o “perfecto”. La reserva se confirma al acreditarse la seña.`;
+              direct = `Te resumo antes de generar el pago:\n${cancha.nombre} · ${friendlyDate(slot.fecha)} · ${friendlyRange(slot.inicio, a.duracion, slot.fin)}\nDuración: ${a.duracion} hs\nTotal: $${slot.total}\nSeña: $${slot.minimo_senia}\nA nombre de: ${a.nombre}\nEmail: ${a.email}\n\nCondiciones:\n${terms.map(t => typeof t === 'string' ? t : JSON.stringify(t)).join('\n')}\n\n¿Estás de acuerdo y seguimos con el enlace de Mercado Pago? Podés responder como te quede cómodo, por ejemplo “dale” o “perfecto”. La reserva se confirma al acreditarse la seña.`;
               value = { prepared: true }; break;
             }
             case 'invitacion': {

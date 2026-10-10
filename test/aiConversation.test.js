@@ -70,7 +70,7 @@ test('available hours are ordered and a partial list is explicitly marked', asyn
     listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
     consultarDisponibilidad: async () => ['22:00', '20:00', '17:00', '18:00', '21:00'].map(inicio => ({ fecha: '2026-10-11', inicio }))
   }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1 })]) });
-  assert.match(result.replies[0], /17:00, 18:00, 20:00, entre otros horarios/);
+  assert.match(result.replies[0], /5 de la tarde, 6 de la tarde, 8 de la noche, entre otros horarios/);
 });
 
 test('17 to 19 verifies two complete hours and returns only the server price', async () => {
@@ -81,7 +81,7 @@ test('17 to 19 verifies two complete hours and returns only the server price', a
       return [{ fecha: '2026-10-11', inicio: '17:00', label: '17:00 a 19:00', total: 400, minimo_senia: 120 }];
     }
   }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, hora_inicio: '20:00', duracion: 1 })]) });
-  assert.match(result.replies[0], /17:00 a 19:00/);
+  assert.match(result.replies[0], /5 de la tarde a 7 de la tarde/);
   assert.match(result.replies[0], /2 horas: \$400/);
   assert.match(result.replies[0], /Seña: \$120/);
   assert.equal(result.state.availability.duracion, 2);
@@ -101,7 +101,7 @@ test('an occupied birthday hour proactively offers the nearest day and only sele
   const offered = await handleAiConversation({ ...base, text: 'mmm necesito para las 17', state, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 })]) });
   assert.deepEqual(dates, ['2026-10-21', '2026-10-22', '2026-10-23']);
   assert.match(offered.replies[0], /viernes 23 de octubre/);
-  assert.match(offered.replies[0], /17:00 a 20:00/);
+  assert.match(offered.replies[0], /5 de la tarde a 8 de la noche/);
   assert.equal(offered.state.requestedDate, '2026-10-21');
   assert.equal(offered.state.alternativeOffer.fecha, '2026-10-23');
   const selected = await handleAiConversation({ ...base, text: 'no mejor otro día', state: offered.state, reservasApi: api, fetchImpl: fakeGemini([reply('¿Qué día preferís?')]) });
@@ -139,8 +139,8 @@ test('changing birthday date does not reuse an old checkout or skip summary and 
   const changed = await handleAiConversation({ ...base, text: 'y para el 24?', state: oldState, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-22', cancha: 1, duracion: 3 }), reply('Hay de 13 a 16.')]) });
   const draft = await handleAiConversation({ ...base, text: 'de 13 a 16', state: changed.state, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', { fecha: '2026-10-21', hora_inicio: '13:00', cancha: 1, duracion: 3 })]) });
   assert.equal(writes, 0);
-  assert.match(draft.replies[0], /2026-10-24/);
-  assert.match(draft.replies[0], /13:00 a 16:00/);
+  assert.match(draft.replies[0], /s?bado 24 de octubre/);
+  assert.match(draft.replies[0], /1 de la tarde a 4 de la tarde/);
   assert.match(draft.replies[0], /Condiciones del cumpleaños/);
   assert.doesNotMatch(draft.replies[0], /pago.example\/viejo/);
   const paid = await handleAiConversation({ ...base, text: 'dale', state: draft.state, reservasApi: api });

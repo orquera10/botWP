@@ -20,8 +20,7 @@ export function friendlyTime(value) {
   if (!match) return String(value || '');
   const hour = Number(match[1]);
   const minutes = match[2] === '00' ? '' : `:${match[2]}`;
-  const period = hour < 6 ? 'de la madrugada' : hour < 12 ? 'de la mañana' : hour < 20 ? 'de la tarde' : 'de la noche';
-  return `${hour % 12 || 12}${minutes} ${period}`;
+  return `${hour}${minutes}`;
 }
 
 export function friendlyRange(start, duration, end) {
@@ -56,10 +55,6 @@ export function availabilityRanges(slots, duration, merge = true) {
   return ranges.map(({ start, end }) => {
     const startTime = new Date(start).toISOString().slice(11, 16);
     const endTime = new Date(end).toISOString().slice(11, 16);
-    const from = friendlyTime(startTime);
-    const to = endTime === '12:00' ? '12 del mediodía' : friendlyTime(endTime);
-    const suffix = from.match(/ de la .+$/)?.[0];
-    const compact = suffix && to.endsWith(suffix) ? from.slice(0, -suffix.length) : from;
-    return `de ${compact} a ${to}`;
+    return `de ${friendlyTime(startTime)} a ${friendlyTime(endTime)}`;
   });
 }

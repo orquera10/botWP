@@ -16,6 +16,41 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('changing birthday date does not reuse an old checkout or skip summary and terms', async () => {
+  let writes = 0;
+  const api = {
+    listarCanchas: async () => [{ id: 1, nombre: 'Cumpleaños', duracion_fija: 3 }],
+    consultarDisponibilidad: async args => {
+      assert.equal(args.fecha, '2026-10-24');
+      return [{ fecha: args.fecha, inicio: '13:00', label: '13:00 a 16:00', total: 300, minimo_senia: 90 }];
+    },
+    listarTerminos: async () => ['Condiciones del cumpleaños'],
+    crearReserva: async args => {
+      writes++;
+      assert.equal(args.fecha, '2026-10-24');
+      assert.equal(args.hora_inicio, '13:00');
+      assert.equal(args.acepta_terminos, true);
+      return { reserva: { ticket_id: 456 }, mercadopago: { init_point: 'https://pago.example/nuevo' } };
+    }
+  };
+  const oldState = { updatedAt: now, customer: { exists: true, nombre: 'Ana', email: 'ana@example.com' }, checkout: { ticketId: 123, status: 'pendiente_pago', createdAt: now, url: 'https://pago.example/viejo' }, availability: { fecha: '2026-10-22', cancha: 1, duracion: 3 } };
+  const changed = await handleAiConversation({ ...base, text: 'y para el 24?', state: oldState, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-22', cancha: 1, duracion: 3 }), reply('Hay de 13 a 16.')]) });
+  const draft = await handleAiConversation({ ...base, text: 'de 13 a 16', state: changed.state, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', { fecha: '2026-10-21', hora_inicio: '13:00', cancha: 1, duracion: 3 })]) });
+  assert.equal(writes, 0);
+  assert.match(draft.replies[0], /2026-10-24/);
+  assert.match(draft.replies[0], /13:00 a 16:00/);
+  assert.match(draft.replies[0], /Condiciones del cumpleaños/);
+  assert.doesNotMatch(draft.replies[0], /pago.example\/viejo/);
+  const paid = await handleAiConversation({ ...base, text: 'dale', state: draft.state, reservasApi: api });
+  assert.equal(writes, 1);
+  assert.equal(paid.state.checkout.booking.fecha, '2026-10-24');
+  assert.match(paid.replies[0], /pago.example\/nuevo/);
+});
+
+test('a previous checkout cannot confirm payment for a newly selected date', async () => {
+  const output = await handleAiConversation({ ...base, text: 'ya hice el pago', state: { updatedAt: now, requestedDate: '2026-10-24', checkout: { ticketId: 123, booking: { fecha: '2026-10-21' } } }, reservasApi: { consultarTurnos: () => assert.fail('Must not confirm the old ticket') } });
+  assert.match(output.replies[0], /no corresponde a la fecha/);
+});
 const call = (name, args = {}) => ({ role: 'model', parts: [{ functionCall: { name, args } }] });
 const reply = text => ({ role: 'model', parts: [{ text }] });
 function fakeGemini(contents, requests = []) {

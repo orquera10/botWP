@@ -1,6 +1,6 @@
 import { createBirthdayInvitation, BIRTHDAY_RULES_IMAGE } from './birthdayInvitation.js';
 import { createGeminiLiveTransport, isLiveModel } from './geminiLive.js';
-import { friendlyDate, friendlyTime, friendlyRange, availabilityRanges } from './conversationFormatting.js';
+import { friendlyDate, friendlyTime, friendlyRange, availabilityRanges, numericBookingSummary } from './conversationFormatting.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -114,7 +114,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const catalogUrl = businessSettings.catalogUrl || process.env.CATALOG_URL || '';
   const paymentMessage = checkout => [
     'Para confirmar el turno tenés que pagar la seña por Mercado Pago. Todavía está pendiente de pago.',
-    checkout.booking ? `${checkout.booking.nombre} · ${friendlyDate(checkout.booking.fecha)} · ${friendlyRange(checkout.booking.hora_inicio, checkout.booking.duracion)} (${checkout.booking.duracion} hs)` : '',
+    checkout.booking ? numericBookingSummary(checkout.booking) : '',
     checkout.total != null ? `Total del turno: $${checkout.total}` : '',
     checkout.senia != null ? `Seña a pagar: $${checkout.senia}` : '',
     checkout.url || 'No recibí un enlace de pago. Contactá al negocio para verificar la solicitud.',

@@ -6,6 +6,15 @@ export function friendlyDate(value) {
   return new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(date).replace(',', '');
 }
 
+export function numericBookingSummary(booking) {
+  const date = String(booking.fecha || '').replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3-$2-$1');
+  const match = String(booking.hora_inicio || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return `${booking.nombre || ''} · ${date}`;
+  const minutes = (Number(match[1]) * 60 + Number(match[2]) + Number(booking.duracion) * 60) % 1440;
+  const end = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return `${booking.nombre || ''} · ${date} · ${booking.hora_inicio} a ${end} (${booking.duracion} hs)`;
+}
+
 export function friendlyTime(value) {
   const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
   if (!match) return String(value || '');

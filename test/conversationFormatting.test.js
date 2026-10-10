@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { friendlyDate, friendlyTime, friendlyRange, chronologicalSlots, availabilityRanges } from '../src/conversationFormatting.js';
+import { friendlyDate, friendlyTime, friendlyRange, chronologicalSlots, availabilityRanges, numericBookingSummary } from '../src/conversationFormatting.js';
+
+test('payment summary uses numeric date and times across midnight', () => {
+  assert.equal(numericBookingSummary({ nombre: 'Fútbol 7/8', fecha: '2026-10-11', hora_inicio: '23:00', duracion: 2 }), 'Fútbol 7/8 · 11-10-2026 · 23:00 a 01:00 (2 hs)');
+});
 
 test('customer dates and times use natural Spanish without changing internal values', () => {
   assert.equal(friendlyDate('2026-10-12'), 'lunes 12 de octubre');

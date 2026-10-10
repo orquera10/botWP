@@ -61,6 +61,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const fresh = state?.updatedAt && now - state.updatedAt < 30 * 60_000;
   const previous = fresh ? state : {};
   const next = { ...previous, history: [...(previous.history || [])], updatedAt: now };
+  if (next.checkout) next.checkout = { ...next.checkout };
   const acceptedAlternative = next.alternativeOffer && !next.pending && isAcceptance(text);
   if (acceptedAlternative) {
     next.requestedDate = next.alternativeOffer.fecha;
@@ -177,6 +178,18 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   if (next.quota.calls >= limit) return result(['Llegamos al límite de consultas por esta hora. Podés volver a escribir más tarde o contactar al negocio.']);
   if ((next.offTopic || 0) >= 3 && !/cancha|reserv|turno|precio|horario|cumple|seña|sena|ubicaci|disponib/i.test(text)) return result([redirect]);
 
+  // Payment webhooks send WhatsApp notifications outside Gemini's history.
+  // Refresh the exact checkout before composing the next conversational reply.
+  let paymentRefresh = 'not_needed';
+  if (phone && next.checkout?.ticketId && next.checkout.status === 'pendiente_pago') {
+    try {
+      const data = await api.consultarTurnos({ telefono: phone, futuros: 0, limite: 20 });
+      const turno = (data.turnos || []).find(t => String(t.ticket_id) === String(next.checkout.ticketId));
+      if (turno && ['confirmada', 'cancelada'].includes(turno.estado)) next.checkout.status = turno.estado;
+      paymentRefresh = turno ? 'verified' : 'not_found';
+    } catch { paymentRefresh = 'unavailable'; }
+  }
+
   // Fetch only by the sender's verified WhatsApp number. No model-selected identity.
   if (phone && api?.consultarCliente && !next.customer) {
     try {
@@ -211,6 +224,7 @@ Al preparar una reserva el servidor mostrará condiciones y resumen; no hace fal
 Para completar una reserva es OBLIGATORIO preparar_reserva, aceptar condiciones y generar el enlace de Mercado Pago. Nunca cierres la charla diciendo que ya reservaste o confirmaste: hasta acreditar la seña solo hay una solicitud pendiente. Si dice que pagó, verificá con estado_pago; su mensaje no prueba acreditación. No inventes enlaces. Si quiere reservar y ya tenés cancha, fecha y duración, ejecutá preparar_reserva con la hora elegida, no te limites a prometer que lo harás.
 Datos del cliente obtenidos automáticamente de la base: ${JSON.stringify(next.customer || { consulta: 'no disponible' })}. Reutilizá nombre y email registrados, no los vuelvas a pedir ni expliques verificaciones técnicas. Solo si exists=false pedí nombre y email para registrar al reservar; si existe pero falta un dato, pedí solo ese dato. Una consulta fallida o identidad no disponible NO significa que no esté registrado: no inicies registro en ese caso. Si no se pudo identificar automáticamente, seguí con consultas generales y derivá al negocio únicamente para finalizar la reserva; jamás pidas el número. Antes de pedir datos usá mi_cliente si aún no hay resultado. No uses el nombre de perfil como identidad verificada. Si consulta productos, bebidas para comprar o catálogo, usá catalogo para entregar el enlace exacto.
 Solicitud de pago actual: ${JSON.stringify(next.checkout || null)}. Si está pendiente, ayudá a pagar; no generes una segunda solicitud igual.
+Estado de la verificación automática del pago: ${paymentRefresh}. El estado actual del sistema prevalece sobre mensajes anteriores del historial que decían pendiente. Si está confirmada, no pidas pagar la seña ni avisar cuando pague; el saldo restante es otra cosa. Ante “dale, gracias”, un agradecimiento o una despedida, respondé cordial y breve sin repetir el pago ni agregar tareas o preguntas innecesarias. Nunca digas “avisame si pagás”: la acreditación es automática. Si no se pudo verificar, no afirmes que pagó ni que falta pagar; un agradecimiento se responde normalmente sin hablar del estado.
 Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, information: businessSettings.aiBusinessInfo })}`;
   const contents = [...next.history, { role: 'user', parts: [{ text: String(text) }] }];
   let direct;

@@ -16,6 +16,30 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('a thank-you after external payment confirmation refreshes the exact ticket before Gemini replies', async () => {
+  const requests = [];
+  const state = { updatedAt: now, checkout: { ticketId: 123, status: 'pendiente_pago', createdAt: now }, history: [{ role: 'model', parts: [{ text: 'Todavía está pendiente de pago.' }] }] };
+  const output = await handleAiConversation({ ...base, text: 'dale gracias', state, reservasApi: {
+    consultarTurnos: async args => {
+      assert.equal(args.telefono, '5493881234567');
+      return { turnos: [{ ticket_id: 999, estado: 'pendiente_pago' }, { ticket_id: 123, estado: 'confirmada' }] };
+    },
+    crearReserva: () => assert.fail('A thank-you cannot create another reservation')
+  }, fetchImpl: fakeGemini([reply('¡De nada! Que disfruten el partido 😊')], requests) });
+  assert.equal(output.state.checkout.status, 'confirmada');
+  assert.equal(state.checkout.status, 'pendiente_pago');
+  assert.match(requests[0].systemInstruction.parts[0].text, /"status":"confirmada"/);
+  assert.match(requests[0].systemInstruction.parts[0].text, /Nunca digas “avisame si pagás”/);
+  assert.deepEqual(output.replies, ['¡De nada! Que disfruten el partido 😊']);
+});
+
+test('payment lookup failure does not invent confirmation or interrupt a thank-you', async () => {
+  const requests = [];
+  const output = await handleAiConversation({ ...base, text: 'muchas gracias', state: { updatedAt: now, checkout: { ticketId: 123, status: 'pendiente_pago', createdAt: now } }, reservasApi: { consultarTurnos: async () => { throw new Error('network'); } }, fetchImpl: fakeGemini([reply('¡De nada!')], requests) });
+  assert.equal(output.state.checkout.status, 'pendiente_pago');
+  assert.match(requests[0].systemInstruction.parts[0].text, /verificación automática del pago: unavailable/);
+  assert.deepEqual(output.replies, ['¡De nada!']);
+});
 test('Gemini composes availability from verified ranges, exact slot and prices instead of a template', async () => {
   const requests = [];
   const answer = '¡Sí, ese horario está libre! Las dos horas salen $400, con $120 de seña.';

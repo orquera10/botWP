@@ -16,6 +16,38 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('an occupied birthday hour proactively offers the nearest day and only selects it on agreement', async () => {
+  const dates = [];
+  const api = {
+    listarCanchas: async () => [{ id: 1, nombre: 'Cumpleaños', duracion_fija: 3 }],
+    consultarDisponibilidad: async ({ fecha }) => {
+      dates.push(fecha);
+      return [{ fecha, inicio: fecha === '2026-10-23' ? '17:00' : '21:00', label: fecha === '2026-10-23' ? '17:00 a 20:00' : '21:00 a 00:00', total: 300, minimo_senia: 90 }];
+    },
+    listarTerminos: async () => ['Condiciones'],
+    crearReserva: () => assert.fail('Offering or selecting an alternative cannot create a reservation')
+  };
+  const state = { updatedAt: now, requestedDate: '2026-10-21', customer: { exists: true, nombre: 'Ana', email: 'ana@example.com' } };
+  const offered = await handleAiConversation({ ...base, text: 'mmm necesito para las 17', state, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 })]) });
+  assert.deepEqual(dates, ['2026-10-21', '2026-10-22', '2026-10-23']);
+  assert.match(offered.replies[0], /viernes 23 de octubre/);
+  assert.match(offered.replies[0], /17:00 a 20:00/);
+  assert.equal(offered.state.requestedDate, '2026-10-21');
+  assert.equal(offered.state.alternativeOffer.fecha, '2026-10-23');
+  const selected = await handleAiConversation({ ...base, text: 'no mejor otro día', state: offered.state, reservasApi: api, fetchImpl: fakeGemini([reply('¿Qué día preferís?')]) });
+  assert.equal(selected.state.requestedDate, '2026-10-21');
+  const accepted = await handleAiConversation({ ...base, text: 'si de 10', state: offered.state, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', { fecha: '2026-10-21', hora_inicio: '17:00', cancha: 1, duracion: 3 })]) });
+  assert.equal(accepted.state.requestedDate, '2026-10-23');
+  assert.equal(accepted.state.pending.fecha, '2026-10-23');
+  assert.match(accepted.replies[0], /Condiciones/);
+});
+
+test('automatic alternative search stops after seven days', async () => {
+  let queries = 0;
+  const result = await handleAiConversation({ ...base, text: 'para las 17', reservasApi: { listarCanchas: async () => [{ id: 1 }], consultarDisponibilidad: async () => { queries++; return []; } }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('No encontré ese horario en los próximos siete días.')]) });
+  assert.equal(queries, 8);
+  assert.equal(result.state.alternativeOffer, undefined);
+});
 test('changing birthday date does not reuse an old checkout or skip summary and terms', async () => {
   let writes = 0;
   const api = {

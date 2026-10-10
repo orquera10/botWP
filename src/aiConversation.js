@@ -185,7 +185,8 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   // Any other message invalidates the confirmation, preventing stale or changed bookings.
   delete next.pending;
   if (String(text).length > 2000) return result(['Mandame una consulta más breve sobre las canchas o reservas, por favor.']);
-  if (needsCourtSelection(text, next.history)) {
+  const selectionNeeded = needsCourtSelection(text, next.history);
+  if (selectionNeeded && !next.requestedDate) {
     const question = '¡Dale! ¿Cuántos van a jugar?';
     next.history = [...next.history, { role: 'user', parts: [{ text: String(text) }] }, { role: 'model', parts: [{ text: question }] }].slice(-12);
     next.offTopic = 0;
@@ -216,6 +217,16 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   if (api?.listarCanchas) {
     try { await listCourts(); } catch { /* Tools can retry a failed catalog lookup. */ }
   }
+  if (selectionNeeded && next.requestedDate) {
+    delete next.availability;
+    delete next.alternativeOffer;
+    delete next.requestedHour;
+    const options = await Promise.allSettled((courts || []).map(async court => {
+      const slots = await api.consultarDisponibilidad({ fecha: next.requestedDate, cancha: court.id, duracion: court.duracion_fija || 1 });
+      return { cancha: court.id, nombre: court.nombre, disponible: slots.length > 0 };
+    }));
+    next.dayOptions = { fecha: next.requestedDate, fecha_legible: friendlyDate(next.requestedDate), opciones: options.filter(item => item.status === 'fulfilled').map(item => item.value), consultas_fallidas: options.filter(item => item.status === 'rejected').length };
+  }
 
   const date = new Date(now).toLocaleString('es-AR', { timeZone: businessSettings.timeZone || process.env.BUSINESS_TIME_ZONE || 'America/Argentina/Buenos_Aires' });
   const system = `Sos recepcionista de ${businessName || 'las canchas'}. Hablá en español argentino, cálido, breve y natural, sin menús numerados. Fecha y hora local: ${date}.
@@ -224,7 +235,8 @@ Si el mensaje es solo un saludo y no hay pedido pendiente, saludá y presentá b
 Solo podés ayudar con las canchas y sus reservas, condiciones, servicios, cumpleaños, pagos de seña y catálogo del negocio. Frente a otro tema, redirigí amablemente en una frase y no desarrolles la respuesta ajena.
 Canchas actuales consultadas al sistema: ${JSON.stringify(courts || null)}.
 La cantidad de personas que dice el cliente es el TOTAL entre ambos equipos, no la cantidad por equipo. Fútbol 5 incluye 10 jugadores (5 por equipo), Fútbol 6 incluye 12 (6 por equipo), Fútbol 7/8 incluye 16 (hasta 8 por equipo). Para “somos 16” corresponde UNA cancha de Fútbol 7/8: no digas que falta capacidad ni propongas dos canchas. Confirmá cancha y horario con el listado real. Superar jugadores incluidos tiene costo extra según las condiciones; no inventes una prohibición ni el monto extra. No asumas que la Cancha Promo tiene una capacidad determinada si no está informada.
-Avanzá de a un paso, tanto en texto como en notas de voz. Si pide “quiero cancha para mañana” o indica un día, pero todavía no sabemos qué cancha busca ni cuántos jugadores son, preguntá brevemente cuántos van a jugar, por ejemplo “¡Dale! ¿Cuántos van a jugar?”. No consultes ni enumeres horarios de todas las canchas para ese pedido incompleto. Si ya eligió cancha o informó jugadores en el historial, reutilizá ese dato y preguntá solo lo que falta; no vuelvas a preguntar cuántos son. Si dice que es para un cumpleaños, seguí ese contexto sin preguntar jugadores de fútbol. Si pregunta expresamente qué tipos de cancha hay, mencioná brevemente las opciones reales y preguntá cuál busca, sin desplegar todos sus horarios. Una vez definida la cancha, podés mostrar sus franjas verificadas si consulta por un día. No agregues saludos largos, explicaciones ni precios de opciones que no pidió.
+Avanzá de a un paso, tanto en texto como en notas de voz. Si pide turno para un día y todavía no sabemos cancha ni jugadores, mencioná brevemente SOLO qué opciones tienen disponibilidad verificada ese día (incluí cumpleaños si está disponible), sin enumerar sus horarios ni precios. Después preguntá cuántos van a jugar o si es para un cumple. Por ejemplo, únicamente si los datos lo confirman: “Sí, hay Fútbol 5, 6, 7/8 y cumpleaños. ¿Cuántos van a jugar o es para un cumple?”. Si ya eligió cancha o informó jugadores, reutilizá ese dato y no vuelvas a preguntarlo. Si es cumpleaños no preguntes jugadores de fútbol. Una vez definida la cancha, mostrale sus franjas reales y ofrecé alternativas del mismo día cuando el horario esté ocupado. No agregues saludos largos ni explicaciones innecesarias.
+Opciones verificadas para el día: ${JSON.stringify(next.dayOptions?.fecha === next.requestedDate ? next.dayOptions : null)}. ${selectionNeeded ? 'Falta definir actividad o cantidad de jugadores: respondé con las opciones verificadas disponibles y UNA pregunta corta. No muestres franjas, horarios ni precios todavía. No consultes otra vez disponibilidad ni prepares reservas. Si una consulta falló, no afirmes disponibilidad de esa cancha; si ninguna está verificada, preguntá qué actividad busca sin inventar disponibilidad.' : 'Continuá con la cancha elegida según jugadores o actividad y conservá los datos anteriores.'}
 Usá un tono amable y simple, sin exagerar modismos ni repetir saludos en cada mensaje. Escribí “Fútbol 5”, horarios como “20:00 a 21:00” y precios con “$”. No digas “de 5”, “bancás un toque” ni prometas consultar más tarde: consultá las herramientas en este turno. “De 20 a 21” significa inicio 20:00 y duración 1 hora; “a las 20” o “21” actualizan solo el horario conservando fecha, cancha y duración ya elegidas. Si propusiste fútbol 5 y el cliente respondió con horario, continuá con esa cancha, no vuelvas a preguntar cuál.
 Al hablar con clientes presentá fechas como “el lunes 12 de octubre”, nunca YYYY-MM-DD, y horas como “4 de la tarde” o “2 de la madrugada”. Conservá YYYY-MM-DD y HH:mm únicamente en los argumentos de herramientas. No mezcles 24 horas con pm: 14:00 equivale a 2 de la tarde. No anuncies una franja entera libre si solo verificaste algunos turnos.
 Última consulta real de disponibilidad: ${JSON.stringify(next.availability || null)}. Conservá sus datos al interpretar respuestas breves; volvé a consultar para comprobar disponibilidad actual. Ante un error de parámetros corregí la llamada y reintentá dentro del turno, sin obligar al cliente a repetir lo ya dicho. Un horario no disponible no es un error técnico; ofrecé alternativas reales.
@@ -305,6 +317,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
           switch (call.name) {
             case 'canchas': value = await listCourts(); break;
             case 'disponibilidad': {
+              if (selectionNeeded) throw new Error('Las opciones del día ya están consultadas. Falta preguntar cuántos juegan o si buscan cumpleaños antes de mostrar horarios de una cancha.');
               if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || !Number.isInteger(a.duracion) || a.duracion < 1 || a.duracion > 4) throw new Error('Fecha inválida o duración incorrecta: expresar duración en horas enteras de 1 a 4, nunca minutos.');
               const canchas = await listCourts();
               if (!canchas.some(c => c.id === a.cancha)) { value = { error: 'ID de cancha incorrecto. Elegí el ID interno del listado, no el número de jugadores.', canchas }; break; }
@@ -362,6 +375,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               value = { prepared: true }; break;
             }
             case 'preparar_reserva': {
+              if (selectionNeeded) throw new Error('Falta elegir cancha o informar jugadores/actividad. Mostrar opciones verificadas y hacer una pregunta breve, sin reservar.');
               if (weekdayOnly) throw new Error('El cliente cambió el día sin elegir una hora. Consultar disponibilidad para mostrar las franjas de la nueva fecha antes de preparar la reserva.');
               if (!phone) throw new Error('Cuenta no identificada automáticamente. No pedir teléfono; derivar al negocio para finalizar.');
               const existing = next.checkout?.booking;

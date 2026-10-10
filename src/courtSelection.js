@@ -3,7 +3,7 @@ const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300
 export function needsCourtSelection(text, history = []) {
   const current = normalize(text);
   // A general request needs a court or player count before looking up slots.
-  if (!/\bcancha\b/.test(current) || !/\b(quiero|queremos|queria|queriamos|necesito|necesitamos|busco|buscamos|reservar|reservame|tenes|hay)\b/.test(current)) return false;
+  if (!/\b(cancha|turno|disponibilidad|disponible)\b/.test(current) || !/\b(quiero|queremos|queria|queriamos|necesito|necesitamos|busco|buscamos|reservar|reservame|tenes|hay|disponibilidad|disponible)\b/.test(current)) return false;
   if (/\b(tipos|opciones|todas|cuales|que canchas)\b/.test(current)) return false;
   const userMessages = [...history.filter(item => item.role === 'user').map(item => item.parts?.map(part => part.text || '').join(' ') || ''), text];
   const evidence = normalize(userMessages.join(' '));

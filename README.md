@@ -21,6 +21,14 @@ AI_MAX_CALLS_PER_HOUR=60
 AI_MAX_TOTAL_CALLS_PER_HOUR=600
 ```
 
+También se admite `GEMINI_MODEL=gemini-3.1-flash-live-preview`. El servidor detecta
+los modelos Live y usa WebSocket en lugar de `generateContent`, conserva las mismas
+funciones y controles de reservas, y entrega a WhatsApp la transcripción de la
+respuesta de audio. No envía notas de voz. Cada mensaje abre una sesión temporal,
+restaura el historial breve y cierra la conexión al terminar, incluso ante errores.
+Live genera audio aunque solo se use el texto: su cuota y facturación son propias.
+Después de actualizar esta versión ejecutar `npm install` y reiniciar el servidor.
+
 Se activa para perfiles con el módulo `reservas`. Con `settings.aiEnabled=false`
 se puede deshabilitar por negocio. `settings.aiBusinessInfo` permite proporcionar
 ubicación, servicios y datos adicionales del negocio; no incluir claves ni secretos.

@@ -43,6 +43,10 @@ usan el teléfono vinculado por WhatsApp, no números elegidos por el modelo.
 
 Al iniciar una conversación con teléfono verificado se consulta `cliente` y se
 reutilizan nombre y email registrados; se piden únicamente datos faltantes.
+El modo IA no pide escribir ni compartir el número: utiliza el remitente y los
+metadatos de WhatsApp, o una asociación LID existente. Si solo llega un LID sin
+asociación, mantiene las consultas generales y deriva al negocio para finalizar;
+no supone que sea un cliente nuevo ni busca por nombre de perfil.
 Después de aceptar el resumen, `reservar` crea la solicitud `pendiente_pago` y
 devuelve el enlace exacto de Mercado Pago. Este paso no confirma la reserva:
 la API del negocio la confirma cuando acredita la seña. Ante “ya pagué”, el bot

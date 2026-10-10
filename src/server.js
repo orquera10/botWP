@@ -45,6 +45,7 @@ import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
+import { senderPhoneJid } from './whatsappIdentity.js';
 
 const aiStates = new Map();
 const aiCleanupTimer = setInterval(() => {
@@ -640,7 +641,13 @@ async function connectSession(clientName) {
           await saveIncomingMessage(session, payload);
           let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
 
-          if (payload.from?.endsWith('@lid')) {
+          const automaticPhoneJid = senderPhoneJid(message);
+          if (payload.from?.endsWith('@lid') && automaticPhoneJid) {
+            await linkClientAlias(session, payload.from, automaticPhoneJid);
+            canonicalConversationJid = automaticPhoneJid;
+          }
+
+          if (payload.from?.endsWith('@lid') && !aiEnabled(session.businessSettings)) {
             const canonicalJid = extractPhoneJidFromVerificationReply(payload.text);
             if (canonicalJid) {
               const [registrationState, reservationState] = await Promise.all([
@@ -736,9 +743,6 @@ async function connectSession(clientName) {
               aiStates.set(key, output.state);
               await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
               await sendFlowOutput(session, payload.from, output);
-              if (!canonicalConversationJid?.endsWith('@s.whatsapp.net') && await shouldAskForLidVerification(session.id, payload.from)) {
-                await sendBotText(session, payload.from, buildLidVerificationMessage(session));
-              }
             });
           }
 

@@ -16,6 +16,27 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('available hours are ordered and a partial list is explicitly marked', async () => {
+  const result = await handleAiConversation({ ...base, text: 'somos 10 y queremos para mañana', reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async () => ['22:00', '20:00', '17:00', '18:00', '21:00'].map(inicio => ({ fecha: '2026-10-11', inicio }))
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1 })]) });
+  assert.match(result.replies[0], /17:00, 18:00, 20:00, entre otros horarios/);
+});
+
+test('17 to 19 verifies two complete hours and returns only the server price', async () => {
+  const result = await handleAiConversation({ ...base, text: 'queríamos para de 17 a 19', reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async args => {
+      assert.equal(args.duracion, 2);
+      return [{ fecha: '2026-10-11', inicio: '17:00', label: '17:00 a 19:00', total: 400, minimo_senia: 120 }];
+    }
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, hora_inicio: '20:00', duracion: 1 })]) });
+  assert.match(result.replies[0], /17:00 a 19:00/);
+  assert.match(result.replies[0], /2 horas: \$400/);
+  assert.match(result.replies[0], /Seña: \$120/);
+  assert.equal(result.state.availability.duracion, 2);
+});
 test('an occupied birthday hour proactively offers the nearest day and only selects it on agreement', async () => {
   const dates = [];
   const api = {

@@ -1,6 +1,6 @@
 import { createBirthdayInvitation, BIRTHDAY_RULES_IMAGE } from './birthdayInvitation.js';
 import { createGeminiLiveTransport, isLiveModel } from './geminiLive.js';
-import { friendlyDate, friendlyTime, friendlyRange, chronologicalSlots } from './conversationFormatting.js';
+import { friendlyDate, friendlyTime, friendlyRange, availabilityRanges } from './conversationFormatting.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -274,8 +274,11 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
                   direct += ' ¿Querés que prepare el resumen y las condiciones?';
                 }
               } else if (value.length) {
-                const ordered = chronologicalSlots(value);
-                direct = `Para el ${friendlyDate(a.fecha)} hay lugar en ${next.availability.nombre} a las ${ordered.slice(0, 3).map(slot => `${friendlyTime(slot.inicio)}${slot.fecha !== a.fecha ? ' del día siguiente' : ''}`).join(', ')}${ordered.length > 3 ? ', entre otros horarios' : ''}. ¿A qué hora querés jugar?`;
+                const court = canchas.find(c => c.id === a.cancha);
+                const ranges = availabilityRanges(value, a.duracion, !court?.duracion_fija);
+                const shown = ranges.slice(0, 5);
+                const description = shown.length > 1 ? `${shown.slice(0, -1).join(', ')} y ${shown.at(-1)}` : shown[0];
+                direct = `Para el ${friendlyDate(a.fecha)} tenemos ${description} en ${next.availability.nombre}${ranges.length > 5 ? ', y otras franjas disponibles' : ''}. ¿Qué horario te sirve?`;
               }
               if (hour && /^\d{2}:\d{2}$/.test(hour) && !value.some(slot => slot.inicio === hour)) {
                 delete next.alternativeOffer;

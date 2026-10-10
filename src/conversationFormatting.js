@@ -27,3 +27,30 @@ export function friendlyRange(start, duration, end) {
 export function chronologicalSlots(slots) {
   return [...slots].sort((a, b) => `${a.fecha}T${a.inicio}`.localeCompare(`${b.fecha}T${b.inicio}`));
 }
+
+export function availabilityRanges(slots, duration, merge = true) {
+  const intervals = chronologicalSlots(slots).map(slot => {
+    const start = Date.parse(`${slot.fecha}T${slot.inicio}:00Z`);
+    let end = start + duration * 3_600_000;
+    if (slot.fin) {
+      end = Date.parse(`${slot.fecha}T${slot.fin}:00Z`);
+      if (end <= start) end += 86_400_000;
+    }
+    return { start, end };
+  }).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
+  const ranges = [];
+  for (const interval of intervals) {
+    const last = ranges.at(-1);
+    if (merge && last && interval.start <= last.end) last.end = Math.max(last.end, interval.end);
+    else ranges.push({ ...interval });
+  }
+  return ranges.map(({ start, end }) => {
+    const startTime = new Date(start).toISOString().slice(11, 16);
+    const endTime = new Date(end).toISOString().slice(11, 16);
+    const from = friendlyTime(startTime);
+    const to = endTime === '12:00' ? '12 del mediodía' : friendlyTime(endTime);
+    const suffix = from.match(/ de la .+$/)?.[0];
+    const compact = suffix && to.endsWith(suffix) ? from.slice(0, -suffix.length) : from;
+    return `de ${compact} a ${to}`;
+  });
+}

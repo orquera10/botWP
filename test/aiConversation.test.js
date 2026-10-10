@@ -65,12 +65,13 @@ test('Live reconnect restores completed tool responses without executing the too
     else process.env.GEMINI_MODEL = previous;
   }
 });
-test('available hours are ordered and a partial list is explicitly marked', async () => {
+test('day availability is presented as complete continuous ranges instead of example starts', async () => {
   const result = await handleAiConversation({ ...base, text: 'somos 10 y queremos para mañana', reservasApi: {
     listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
     consultarDisponibilidad: async () => ['22:00', '20:00', '17:00', '18:00', '21:00'].map(inicio => ({ fecha: '2026-10-11', inicio }))
   }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1 })]) });
-  assert.match(result.replies[0], /5 de la tarde, 6 de la tarde, 8 de la noche, entre otros horarios/);
+  assert.match(result.replies[0], /de 5 a 7 de la tarde y de 8 a 11 de la noche/);
+  assert.doesNotMatch(result.replies[0], /entre otros horarios/);
 });
 
 test('17 to 19 verifies two complete hours and returns only the server price', async () => {

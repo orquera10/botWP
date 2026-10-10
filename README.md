@@ -35,8 +35,9 @@ ubicación, servicios y datos adicionales del negocio; no incluir claves ni secr
 Las credenciales de reservas configuradas por negocio se reutilizan.
 
 El servidor verifica el horario y muestra condiciones, precio, seña y datos antes
-de reservar. El siguiente mensaje debe confirmar explícitamente (por ejemplo,
-“sí, acepto”); cualquier otra respuesta descarta esa confirmación pendiente y
+de reservar. El siguiente mensaje puede expresar acuerdo con “dale”, “perfecto”,
+“de acuerdo”, “sí” o 👍; no hace falta una fórmula específica. Una pregunta,
+negativa o corrección no confirma la solicitud y
 permite preparar otra propuesta. La reserva solo se confirma al acreditar el pago.
 El registro independiente también requiere confirmación. Las consultas personales
 usan el teléfono vinculado por WhatsApp, no números elegidos por el modelo.

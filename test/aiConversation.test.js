@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleAiConversation, serializeAiConversation, normalizeBookingArgs, withFootballCapacity } from '../src/aiConversation.js';
+import { handleAiConversation, serializeAiConversation, normalizeBookingArgs, withFootballCapacity, isAcceptance } from '../src/aiConversation.js';
 
 const now = Date.UTC(2026, 9, 10, 15);
+test('accepts natural agreement but excludes questions, conditions and changed booking details', () => {
+  for (const text of ['Sí', 'dale', 'ok perfecto', 'de acuerdo', 'Perfecto, muchas gracias!', 'Me parece bien', 'Sí, acepto los términos y condiciones', 'dale y confirmo', '👍', '👍🏻', 'pasame el link para pagar', 'no hay problema']) assert.equal(isAcceptance(text), true, text);
+  for (const text of ['no', 'no acepto', 'sí pero a las 22', 'perfecto, mejor mañana', '¿dale?', 'si hay lugar', 'si es para mañana', '21', 'gracias', '¿cuánto es la seña?', 'esperá', 'después confirmo']) assert.equal(isAcceptance(text), false, text);
+});
 test('football capacity counts both teams and leaves unknown courts unspecified', () => {
   assert.equal(withFootballCapacity({ nombre: 'Fútbol 5' }).jugadores_incluidos, 10);
   assert.equal(withFootballCapacity({ nombre: 'Fútbol 6' }).jugadores_incluidos, 12);

@@ -16,6 +16,23 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('martes q viene replaces a stale Sunday and shows ranges without carrying the previous hour', async () => {
+  const state = { updatedAt: now, requestedDate: '2026-10-11', requestedHour: '11:00', pending };
+  const output = await handleAiConversation({ ...base, text: 'martes q viene te dije', state, reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async args => {
+      assert.equal(args.fecha, '2026-10-13');
+      return [{ fecha: args.fecha, inicio: '14:00' }, { fecha: args.fecha, inicio: '15:00' }];
+    },
+    crearReserva: () => assert.fail('Changing the day must not create a reservation')
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-11', cancha: 1, duracion: 1, hora_inicio: '11:00' })]) });
+  assert.equal(output.state.requestedDate, '2026-10-13');
+  assert.equal(output.state.requestedHour, undefined);
+  assert.equal(output.state.pending, undefined);
+  assert.match(output.replies[0], /martes 13 de octubre/);
+  assert.match(output.replies[0], /de 2 a 4 de la tarde/);
+  assert.doesNotMatch(output.replies[0], /domingo|11 de la mañana/);
+});
 test('temporary provider errors retry silently with the same input and count every attempt', async () => {
   const requests = [];
   const delays = [];

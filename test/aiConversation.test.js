@@ -16,6 +16,19 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('a pricing question receives verified tariff bands instead of one catalog base price', async () => {
+  const requests = [];
+  const output = await handleAiConversation({ ...base, text: '¿Qué horarios salen más baratos para mañana en Fútbol 5?', reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5', precio: 200, tiene_precios_horarios: true }],
+    consultarDisponibilidad: async ({ fecha }) => [13, 14, 16, 17].map(hour => ({ fecha, inicio: `${hour}:00`, total: hour < 16 ? 100 : 200, total_base: 200, minimo_senia: hour < 16 ? 30 : 60 }))
+  }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: pending.fecha, cancha: 1, duracion: 1 }), reply('De 13 a 15 sale $100 la hora; de 16 a 18, $200. ¿Qué horario te sirve?')], requests) });
+  const verified = requests[1].contents.at(-1).parts[0].functionResponse.response.result;
+  assert.deepEqual(verified.tarifas.map(t => t.franjas), [['de 13 a 15'], ['de 16 a 18']]);
+  assert.equal(verified.tarifas[0].ahorro, 100);
+  assert.equal(verified.tarifas[1].total, 200);
+  assert.match(output.replies[0], /\$100/);
+  assert.match(output.replies[0], /\$200/);
+});
 test('an occupied football slot offers a compatible court on the same date and keeps its own price', async () => {
   const requests = [];
   const queries = [];

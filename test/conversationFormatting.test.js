@@ -1,6 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { friendlyDate, friendlyTime, friendlyRange, chronologicalSlots, availabilityRanges, numericBookingSummary } from '../src/conversationFormatting.js';
+import { friendlyDate, friendlyTime, friendlyRange, chronologicalSlots, availabilityRanges, pricedAvailabilityRanges, numericBookingSummary } from '../src/conversationFormatting.js';
+
+test('prices split availability by actual tariff and preserve occupied gaps', () => {
+  const slots = [13, 14, 16, 17, 18].map(hour => ({ fecha: '2026-10-12', inicio: `${hour}:00`, total: hour < 16 ? 100 : 200, total_base: 200, minimo_senia: hour < 16 ? 30 : 60 }));
+  const tariffs = pricedAvailabilityRanges(slots, 1);
+  assert.deepEqual(tariffs.map(t => t.franjas), [['de 13 a 15'], ['de 16 a 19']]);
+  assert.deepEqual(tariffs.map(t => t.total), [100, 200]);
+  assert.equal(tariffs[0].ahorro, 100);
+  assert.equal(tariffs[0].tipo_precio, 'descuento');
+  assert.equal(tariffs[1].tipo_precio, 'tarifa_base');
+});
+
+test('multi-hour totals are not multiplied or presented as hourly prices, and higher tariffs are not discounts', () => {
+  const tariffs = pricedAvailabilityRanges([{ fecha: '2026-10-12', inicio: '17:00', fin: '19:00', total: 450, total_base: 400, minimo_senia: 135 }], 2);
+  assert.equal(tariffs[0].total, 450);
+  assert.equal(tariffs[0].duracion, 2);
+  assert.equal(tariffs[0].ahorro, 0);
+  assert.equal(tariffs[0].tipo_precio, 'tarifa_superior_a_base');
+  assert.deepEqual(tariffs[0].inicios_disponibles, [{ fecha: '2026-10-12', hora: '17:00' }]);
+  assert.deepEqual(pricedAvailabilityRanges([], 1), []);
+  assert.deepEqual(pricedAvailabilityRanges([{ fecha: '2026-10-12', inicio: '17:00' }], 1), []);
+});
 
 test('payment summary uses numeric date and times across midnight', () => {
   assert.equal(numericBookingSummary({ nombre: 'Fútbol 7/8', fecha: '2026-10-11', hora_inicio: '23:00', duracion: 2 }), 'Fútbol 7/8 · 11-10-2026 · 23:00 a 01:00 (2 hs)');

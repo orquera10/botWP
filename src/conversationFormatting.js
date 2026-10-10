@@ -58,3 +58,23 @@ export function availabilityRanges(slots, duration, merge = true) {
     return `de ${friendlyTime(startTime)} a ${friendlyTime(endTime)}`;
   });
 }
+
+export function pricedAvailabilityRanges(slots, duration, merge = true) {
+  const groups = new Map();
+  for (const slot of chronologicalSlots(slots)) {
+    if (slot.total == null || !Number.isFinite(Number(slot.total))) continue;
+    const total = Number(slot.total);
+    const base = slot.total_base == null ? null : Number(slot.total_base);
+    const senia = slot.minimo_senia == null ? null : Number(slot.minimo_senia);
+    const key = JSON.stringify([total, base, senia]);
+    if (!groups.has(key)) groups.set(key, { total, total_base: base, senia, slots: [] });
+    groups.get(key).slots.push(slot);
+  }
+  return [...groups.values()].map(({ slots: group, ...price }) => ({
+    ...price, duracion: duration,
+    franjas: availabilityRanges(group, duration, merge),
+    inicios_disponibles: group.map(slot => ({ fecha: slot.fecha, hora: slot.inicio })),
+    ahorro: price.total_base != null && price.total_base > price.total ? price.total_base - price.total : 0,
+    tipo_precio: price.total_base == null ? 'tarifa_del_turno' : price.total < price.total_base ? 'descuento' : price.total > price.total_base ? 'tarifa_superior_a_base' : 'tarifa_base'
+  }));
+}

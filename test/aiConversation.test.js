@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleAiConversation, serializeAiConversation } from '../src/aiConversation.js';
+import { handleAiConversation, serializeAiConversation, normalizeBookingArgs } from '../src/aiConversation.js';
 
 const now = Date.UTC(2026, 9, 10, 15);
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
@@ -138,4 +138,31 @@ test('catalog URL is delivered literally without audio transcription changes', a
   const url = 'https://example.com/catalogo.php?negocio=la-toxica';
   const result = await handleAiConversation({ ...base, businessSettings: { catalogUrl: url }, fetchImpl: fakeGemini([call('catalogo')]) });
   assert.ok(result.replies[0].includes(url));
+});
+
+test('numeric tool strings are normalized and availability context survives next message', async () => {
+  assert.deepEqual(normalizeBookingArgs({ cancha: '5', duracion: '1', hora_inicio: '9' }), { cancha: 5, duracion: 1, hora_inicio: '09:00' });
+  const requests = [];
+  const api = {
+    listarCanchas: async () => [{ id: 5, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async args => { assert.deepEqual(args, { fecha: pending.fecha, cancha: 5, duracion: 1 }); return []; }
+  };
+  const first = await handleAiConversation({ ...base, reservasApi: api, fetchImpl: fakeGemini([call('disponibilidad', { fecha: pending.fecha, cancha: '5', duracion: '1' }), reply('No hay horarios.')]) });
+  assert.equal(first.state.availability.cancha, 5);
+  await handleAiConversation({ ...base, text: '21', state: first.state, reservasApi: api, fetchImpl: fakeGemini([reply('Consulto las 21:00.')], requests) });
+  assert.match(requests[0].systemInstruction.parts[0].text, /"nombre":"Fútbol 5"/);
+});
+
+test('business validation errors remain distinct from technical failures and log only booking parameters', async () => {
+  const diagnostics = [];
+  const requests = [];
+  const api = {
+    listarCanchas: async () => [{ id: 5 }],
+    consultarDisponibilidad: async () => { const error = new Error('upstream'); error.status = 400; error.data = { message: 'La fecha supera el plazo permitido.' }; throw error; }
+  };
+  await handleAiConversation({ ...base, reservasApi: api, onDiagnostic: d => diagnostics.push(d), fetchImpl: fakeGemini([call('disponibilidad', { fecha: pending.fecha, cancha: 5, duracion: 1 }), reply('La fecha supera el plazo permitido.')], requests) });
+  assert.equal(diagnostics[0].status, 400);
+  assert.equal(diagnostics[0].parameters.cancha, 5);
+  assert.match(JSON.stringify(requests[1].contents), /La fecha supera el plazo permitido/);
+  assert.match(JSON.stringify(requests[1].contents), /validation/);
 });

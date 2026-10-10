@@ -735,6 +735,7 @@ async function connectSession(clientName) {
                 state, text: payload.text, canonicalJid: canonicalConversationJid,
                 reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
                 registrationAvailable: session.businessFlows.includes('registro'),
+                onDiagnostic: diagnostic => logger.warn({ clientId: session.id, businessId: session.businessId, ...diagnostic }, 'Consulta IA no completada'),
                 onBeforeWrite: async consumedState => {
                   aiStates.set(key, consumedState);
                   await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);

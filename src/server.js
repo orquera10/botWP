@@ -46,6 +46,7 @@ import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
 import { senderPhoneJid } from './whatsappIdentity.js';
+import { handlePendingBirthdayInvitation } from './pendingBirthdayInvitation.js';
 
 const aiStates = new Map();
 const aiCleanupTimer = setInterval(() => {
@@ -731,6 +732,30 @@ async function connectSession(clientName) {
             const key = `${session.id}:${session.businessId}:${canonicalConversationJid}`;
             await serializeAiConversation(key, async () => {
               const state = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
+              const invitationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
+              const invitationOutput = await handlePendingBirthdayInvitation({
+                state: invitationState, text: payload.text, canonicalJid: canonicalConversationJid,
+                reservasApi, businessName: session.businessName, businessSettings: session.businessSettings
+              });
+              if (invitationOutput) {
+                if (invitationOutput.state) {
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', invitationOutput.state);
+                } else {
+                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+                }
+                const resumedState = {
+                  ...state, pending: undefined, offTopic: 0, updatedAt: Date.now(),
+                  history: [
+                    ...(state?.history || []),
+                    { role: 'user', parts: [{ text: payload.text }] },
+                    { role: 'model', parts: [{ text: (invitationOutput.replies || []).join('\n') }] }
+                  ].slice(-12)
+                };
+                aiStates.set(key, resumedState);
+                await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', resumedState);
+                await sendFlowOutput(session, payload.from, invitationOutput);
+                return;
+              }
               const output = await handleAiConversation({
                 state, text: payload.text, canonicalJid: canonicalConversationJid,
                 reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,

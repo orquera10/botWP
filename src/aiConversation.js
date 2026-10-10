@@ -55,7 +55,7 @@ const redirect = 'Te puedo ayudar con las canchas, horarios, precios y reservas 
 let globalQuota = { start: 0, calls: 0 };
 
 // The caller serializes messages per conversation, including reservation writes.
-export async function handleAiConversation({ state, text, canonicalJid, reservasApi: api, businessName, businessSettings = {}, registrationAvailable = true, onBeforeWrite = async () => {}, onDiagnostic = () => {}, fetchImpl = fetch, liveTransportFactory = createGeminiLiveTransport, now = Date.now() }) {
+export async function handleAiConversation({ state, text, canonicalJid, reservasApi: api, businessName, businessSettings = {}, registrationAvailable = true, onBeforeWrite = async () => {}, onDiagnostic = () => {}, fetchImpl = fetch, liveTransportFactory = createGeminiLiveTransport, retryDelay = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now() }) {
   const fresh = state?.updatedAt && now - state.updatedAt < 30 * 60_000;
   const previous = fresh ? state : {};
   const next = { ...previous, history: [...(previous.history || [])], updatedAt: now };
@@ -207,19 +207,34 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     if (isLiveModel(model)) live = liveTransportFactory({ model, apiKey: process.env.GEMINI_API_KEY });
     for (let round = 0; round < 5; round++) {
-      if (next.quota.calls >= limit) break;
-      if (now - globalQuota.start >= 3_600_000) globalQuota = { start: now, calls: 0 };
-      if (globalQuota.calls >= (Number(process.env.AI_MAX_TOTAL_CALLS_PER_HOUR) || 600)) break;
-      globalQuota.calls++;
-      next.quota.calls++;
-      const response = await (live?.request || fetchImpl)(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(25_000),
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: [{ functionDeclarations: tools }], generationConfig: { maxOutputTokens: 1200, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } } })
-      });
-      if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
-      const data = await response.json();
-      const content = data.candidates?.[0]?.content;
-      if (!content?.parts?.length) throw new Error('Gemini empty response');
+      let content;
+      // Retry only provider requests, before any returned tool is executed.
+      // A new Live session replays the exact context and completed tool results.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (next.quota.calls >= limit) throw new Error('Local quota reached');
+        if (now - globalQuota.start >= 3_600_000) globalQuota = { start: now, calls: 0 };
+        if (globalQuota.calls >= (Number(process.env.AI_MAX_TOTAL_CALLS_PER_HOUR) || 600)) throw new Error('Local quota reached');
+        globalQuota.calls++;
+        next.quota.calls++;
+        try {
+          const response = await (live?.request || fetchImpl)(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(25_000),
+            body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: [{ functionDeclarations: tools }], generationConfig: { maxOutputTokens: 1200, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } } })
+          });
+          if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
+          const data = await response.json();
+          content = data.candidates?.[0]?.content;
+          if (!content?.parts?.some(p => p.functionCall || (p.text?.trim() && !p.thought))) throw new Error('Gemini empty response');
+          break;
+        } catch (error) {
+          const transient = /HTTP (500|502|503|504)\b|timeout|timed out|empty (response|text|transcript)|connection (error|closed)|fetch failed|ECONNRESET|UNAVAILABLE|INTERNAL|invalid response|tool call cancelled/i.test(String(error.message || ''));
+          if (!transient || attempt === 2) throw error;
+          onDiagnostic({ event: 'provider_retry', attempt: attempt + 1 });
+          live?.close();
+          await retryDelay(500 * (attempt + 1));
+          if (isLiveModel(model)) live = liveTransportFactory({ model, apiKey: process.env.GEMINI_API_KEY });
+        }
+      }
       contents.push(content);
       const calls = content.parts.filter(p => p.functionCall).map(p => p.functionCall);
       if (!calls.length) {

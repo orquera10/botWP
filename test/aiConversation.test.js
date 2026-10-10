@@ -16,6 +16,55 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+test('temporary provider errors retry silently with the same input and count every attempt', async () => {
+  const requests = [];
+  const delays = [];
+  const output = await handleAiConversation({ ...base, retryDelay: async ms => delays.push(ms), fetchImpl: async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    if (requests.length === 1) return { ok: false, status: 503 };
+    if (requests.length === 2) throw new TypeError('fetch failed');
+    return { ok: true, json: async () => ({ candidates: [{ content: reply('¿A qué hora querés jugar?') }] }) };
+  } });
+  assert.deepEqual(output.replies, ['¿A qué hora querés jugar?']);
+  assert.deepEqual(delays, [500, 1000]);
+  assert.deepEqual(requests[0], requests[2]);
+  assert.equal(output.state.quota.calls, 3);
+});
+
+test('retries stop after three temporary failures', async () => {
+  let calls = 0;
+  const output = await handleAiConversation({ ...base, retryDelay: async () => {}, fetchImpl: async () => { calls++; return { ok: false, status: 503 }; } });
+  assert.equal(calls, 3);
+  assert.match(output.replies[0], /No pude completar/);
+});
+
+test('Live reconnect restores completed tool responses without executing the tools again', async () => {
+  const previous = process.env.GEMINI_MODEL;
+  process.env.GEMINI_MODEL = 'gemini-3.1-flash-live-preview';
+  let sessions = 0;
+  let reads = 0;
+  let closes = 0;
+  try {
+    const output = await handleAiConversation({ ...base, retryDelay: async () => {}, reservasApi: { consultarTurnos: async () => { reads++; return { turnos: [] }; } }, liveTransportFactory: () => {
+      const session = ++sessions;
+      let requests = 0;
+      return { close: () => { closes++; }, request: async (_url, options) => {
+        requests++;
+        if (session === 1 && requests === 1) return { ok: true, json: async () => ({ candidates: [{ content: call('mis_turnos') }] }) };
+        if (session === 1) throw new Error('Gemini Live connection closed (1011)');
+        assert.equal(JSON.parse(options.body).contents.at(-1).parts[0].functionResponse.name, 'mis_turnos');
+        return { ok: true, json: async () => ({ candidates: [{ content: reply('No tenés turnos.') }] }) };
+      } };
+    } });
+    assert.equal(reads, 1);
+    assert.equal(sessions, 2);
+    assert.equal(closes, 2);
+    assert.deepEqual(output.replies, ['No tenés turnos.']);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = previous;
+  }
+});
 test('available hours are ordered and a partial list is explicitly marked', async () => {
   const result = await handleAiConversation({ ...base, text: 'somos 10 y queremos para mañana', reservasApi: {
     listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }],

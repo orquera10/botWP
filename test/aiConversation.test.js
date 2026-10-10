@@ -99,3 +99,43 @@ test('unrelated topic uses fixed response and counts strikes', async () => {
   assert.equal(output.state.offTopic, 1);
   assert.match(output.replies[0], /canchas/);
 });
+
+test('registered sender data fills reservation without requesting name or email', async () => {
+  const requests = [];
+  const api = {
+    consultarCliente: async args => { assert.deepEqual(args, { telefono: '5493881234567' }); return { exists: true, cliente: { nombre: 'Ana Registrada', email: 'ana@example.com' } }; },
+    listarCanchas: async () => [{ id: 1, nombre: 'Cancha 1' }],
+    consultarDisponibilidad: async () => [{ fecha: pending.fecha, inicio: pending.hora_inicio, label: '20 a 21', total: 30000, minimo_senia: 10000 }],
+    listarTerminos: async () => ['Condiciones']
+  };
+  const result = await handleAiConversation({ ...base, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', { fecha: pending.fecha, hora_inicio: pending.hora_inicio, cancha: 1, duracion: 1 })], requests) });
+  assert.equal(result.state.pending.cliente.nombre, 'Ana Registrada');
+  assert.equal(result.state.pending.cliente.email, 'ana@example.com');
+  assert.match(requests[0].systemInstruction.parts[0].text, /Ana Registrada/);
+  assert.match(result.replies[0], /enlace de Mercado Pago/);
+});
+
+test('natural acceptance returns exact Mercado Pago URL and never marks paid', async () => {
+  const result = await handleAiConversation({ ...base, text: 'Sí, acepto los términos', state: { updatedAt: now, pending }, reservasApi: {
+    crearReserva: async () => ({ reserva: { ticket_id: 123, estado: 'pendiente_pago', senia: 10000 }, mercadopago: { init_point: 'https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=exact' } })
+  }, fetchImpl: () => assert.fail('Confirmation should bypass AI') });
+  assert.equal(result.state.checkout.status, 'pendiente_pago');
+  assert.match(result.replies[0], /pref_id=exact/);
+  assert.match(result.replies[0], /Todavía está pendiente/);
+});
+
+test('a claim of payment is verified by ticket and sender before confirmation', async () => {
+  for (const estado of ['pendiente_pago', 'confirmada']) {
+    const result = await handleAiConversation({ ...base, text: 'Ya pagué', state: { updatedAt: now, checkout: { ticketId: 123, status: 'pendiente_pago', createdAt: now, url: 'https://pago.example' } }, reservasApi: {
+      consultarTurnos: async args => { assert.equal(args.telefono, '5493881234567'); return { turnos: [{ ticket_id: 123, estado, cancha: 'Fútbol 5', fecha: '11/10', hora_inicio: '20:00', hora_fin: '21:00' }] }; }
+    }, fetchImpl: () => assert.fail('Payment verification should bypass AI') });
+    if (estado === 'confirmada') assert.match(result.replies[0], /reserva está confirmada en el sistema/);
+    else assert.match(result.replies[0], /Todavía está pendiente/);
+  }
+});
+
+test('catalog URL is delivered literally without audio transcription changes', async () => {
+  const url = 'https://example.com/catalogo.php?negocio=la-toxica';
+  const result = await handleAiConversation({ ...base, businessSettings: { catalogUrl: url }, fetchImpl: fakeGemini([call('catalogo')]) });
+  assert.ok(result.replies[0].includes(url));
+});

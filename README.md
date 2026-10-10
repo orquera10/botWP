@@ -41,6 +41,16 @@ permite preparar otra propuesta. La reserva solo se confirma al acreditar el pag
 El registro independiente también requiere confirmación. Las consultas personales
 usan el teléfono vinculado por WhatsApp, no números elegidos por el modelo.
 
+Al iniciar una conversación con teléfono verificado se consulta `cliente` y se
+reutilizan nombre y email registrados; se piden únicamente datos faltantes.
+Después de aceptar el resumen, `reservar` crea la solicitud `pendiente_pago` y
+devuelve el enlace exacto de Mercado Pago. Este paso no confirma la reserva:
+la API del negocio la confirma cuando acredita la seña. Ante “ya pagué”, el bot
+consulta los turnos del remitente y comprueba el estado de ese ticket antes de
+anunciar la confirmación. No procesa ni acredita pagos por su cuenta.
+Las consultas de catálogo usan el enlace literal de `settings.catalogUrl`, o
+`CATALOG_URL` cuando no hay uno configurado, sin transcribirlo desde el audio.
+
 El historial conserva seis intercambios y vence a los 30 minutos de inactividad.
 Funciona en memoria sin PostgreSQL y se guarda también en PostgreSQL cuando está
 configurado. Los límites cuentan llamadas a Gemini, incluyendo consultas a herramientas;

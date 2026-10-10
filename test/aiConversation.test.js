@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleAiConversation, serializeAiConversation, normalizeBookingArgs } from '../src/aiConversation.js';
+import { handleAiConversation, serializeAiConversation, normalizeBookingArgs, withFootballCapacity } from '../src/aiConversation.js';
 
 const now = Date.UTC(2026, 9, 10, 15);
+test('football capacity counts both teams and leaves unknown courts unspecified', () => {
+  assert.equal(withFootballCapacity({ nombre: 'Fútbol 5' }).jugadores_incluidos, 10);
+  assert.equal(withFootballCapacity({ nombre: 'Fútbol 6' }).jugadores_incluidos, 12);
+  assert.equal(withFootballCapacity({ nombre: 'Fútbol 7/8' }).jugadores_incluidos, 16);
+  assert.equal(withFootballCapacity({ nombre: 'Fútbol 7/8' }).jugadores_por_equipo, 8);
+  assert.equal(withFootballCapacity({ nombre: 'Cancha Promo' }).jugadores_incluidos, undefined);
+});
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
 const call = (name, args = {}) => ({ role: 'model', parts: [{ functionCall: { name, args } }] });

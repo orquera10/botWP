@@ -1,5 +1,11 @@
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
+export function isGeneralDiscountQuery(text) {
+  const value = normalize(text);
+  return /\b(promocion(?:es)?|promos?|descuentos?|barat[oa]s?|ofertas?)\b/.test(value)
+    && !/\b(cancha\s+promo|futbol\s*(?:5|6|7|8)|cancha\s+(?:de\s+)?(?:5|6|7|8)|cumpleanos|cumple)\b/.test(value);
+}
+
 export function needsCourtSelection(text, history = []) {
   const current = normalize(text);
   // A general request needs a court or player count before looking up slots.

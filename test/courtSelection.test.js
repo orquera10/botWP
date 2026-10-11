@@ -1,7 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { needsCourtSelection } from '../src/courtSelection.js';
+import { needsCourtSelection, isGeneralDiscountQuery } from '../src/courtSelection.js';
 import { handleAiConversation } from '../src/aiConversation.js';
+
+test('promotion queries mean time-based discounts unless a specific court is named', () => {
+  for (const text of ['tenés alguna cancha con promoción?', 'alguna cancha con promo para mañana', 'hay descuentos?', 'qué horarios son más baratos?']) assert.equal(isGeneralDiscountQuery(text), true, text);
+  for (const text of ['quiero la Cancha Promo', 'Cancha Promo tiene descuento?', 'promociones en Fútbol 5']) assert.equal(isGeneralDiscountQuery(text), false, text);
+});
+
+test('a general discount request asks for a date before looking up prices', async () => {
+  const output = await handleAiConversation({ text: 'tenés cancha con promoción?', reservasApi: { listarCanchas: () => assert.fail('Need date') }, fetchImpl: () => assert.fail('Need date') });
+  assert.deepEqual(output.replies, ['¿Para qué día buscás? Así veo qué horarios tienen descuento.']);
+});
+
+test('general promotions search all available courts and identify real discounts, not the Promo court', async () => {
+  const queries = [];
+  let prompt;
+  const output = await handleAiConversation({ text: 'tenés alguna cancha con promoción para mañana?', now: Date.UTC(2026, 9, 10, 15), reservasApi: {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }, { id: 2, nombre: 'Cancha Promo' }, { id: 3, nombre: 'Fútbol 6' }],
+    consultarDisponibilidad: async args => {
+      queries.push(args.cancha);
+      return [{ fecha: args.fecha, inicio: '14:00', total: args.cancha === 1 ? 100 : 80, total_base: args.cancha === 1 ? 200 : 80, minimo_senia: 30 }];
+    }
+  }, fetchImpl: async (_url, options) => {
+    prompt = JSON.parse(options.body).systemInstruction.parts[0].text;
+    return { ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: 'En Fútbol 5, de 14 a 15 sale $100 en vez de $200. ¿Te sirve?' }] } }] }) };
+  } });
+  assert.deepEqual(queries, [1, 2, 3]);
+  const data = JSON.parse(prompt.split('Franjas disponibles con ahorro comprobado: ')[1].split('. Respondé primero')[0]);
+  assert.deepEqual(data.map(c => c.nombre), ['Fútbol 5']);
+  assert.equal(data[0].tarifas[0].ahorro, 100);
+  assert.match(output.replies[0], /Fútbol 5/);
+  assert.equal(output.state.pending, undefined);
+});
 
 test('generic day request verifies football and birthday options without selecting a court or listing its hours', async () => {
   for (const text of ['quiero cancha para mñn', 'Hola, quiero una cancha para mañana.', 'tenés cancha para el martes?']) {

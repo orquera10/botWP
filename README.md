@@ -16,6 +16,10 @@ para el mismo día y hora, conservando sus propios importes. Después se ofrecen
 otros horarios reales de ese día. Se buscan otras fechas solo si el cliente lo pide.
 Las franjas se calculan por cancha y duración sin unir huecos ocupados; aceptar una
 alternativa prepara su resumen y condiciones, sin reservar hasta aceptar y pagar.
+Ante “qué días hay descuentos” se revisan hasta siete días desde la fecha local,
+buscando turnos disponibles con total inferior al precio base. “Otro día” en una
+conversación sobre descuentos excluye la fecha elegida. La búsqueda no modifica
+la reserva y comunica resultados parciales si alguna consulta falla.
 
 Para activarlo, configurá estas variables en `.env` y reiniciá el servidor:
 

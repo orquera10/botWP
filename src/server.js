@@ -46,6 +46,7 @@ import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
+import { useLegacyFallback, activateLegacyFallback, hasPendingCheckout } from './aiFallback.js';
 import { senderPhoneJid } from './whatsappIdentity.js';
 import { handlePendingBirthdayInvitation } from './pendingBirthdayInvitation.js';
 import { getAudioMessage, transcribeVoiceMessage } from './voiceMessages.js';
@@ -733,66 +734,9 @@ async function connectSession(clientName) {
             }
           }
 
-          let handledByAi = false;
-          if (!handledByAdminFlow && session.businessFlows.includes('reservas') && aiEnabled(session.businessSettings)) {
-            handledByAi = true;
-            const key = `${session.id}:${session.businessId}:${canonicalConversationJid}`;
-            await serializeAiConversation(key, async () => {
-              if (getAudioMessage(message.message)) {
-                try {
-                  payload.text = await transcribeVoiceMessage({ message, key, download: msg => downloadMediaMessage(msg, 'buffer', { options: { timeout: 15_000, maxContentLength: 5 * 1024 * 1024 } }, { logger, reuploadRequest: socket.updateMediaMessage }) });
-                } catch (error) {
-                  logger.warn({ clientId: session.id, category: error.message === 'Audio too long' ? 'audio_limit' : 'audio_unavailable' }, 'No se pudo procesar la nota de voz');
-                  const reply = error.message === 'Audio too long' ? 'Mandame un audio de hasta un minuto, por favor, o escribime tu consulta.'
-                    : error.message === 'Audio quota reached' ? 'Llegamos al límite de audios por esta hora. Podés escribirme y seguimos por acá.'
-                      : 'No pude entender el audio ahora. ¿Me lo escribís o probás con una nota más corta?';
-                  await sendBotText(session, payload.from, reply);
-                  return;
-                }
-              }
-              const state = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
-              const invitationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
-              const invitationOutput = await handlePendingBirthdayInvitation({
-                state: invitationState, text: payload.text, canonicalJid: canonicalConversationJid,
-                reservasApi, businessName: session.businessName, businessSettings: session.businessSettings
-              });
-              if (invitationOutput) {
-                if (invitationOutput.state) {
-                  await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', invitationOutput.state);
-                } else {
-                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
-                }
-                const resumedState = {
-                  ...state, pending: undefined, offTopic: 0, updatedAt: Date.now(),
-                  history: [
-                    ...(state?.history || []),
-                    { role: 'user', parts: [{ text: payload.text }] },
-                    { role: 'model', parts: [{ text: (invitationOutput.replies || []).join('\n') }] }
-                  ].slice(-12)
-                };
-                aiStates.set(key, resumedState);
-                await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', resumedState);
-                await sendFlowOutput(session, payload.from, invitationOutput);
-                return;
-              }
-              const output = await handleAiConversation({
-                state, text: payload.text, canonicalJid: canonicalConversationJid,
-                reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
-                registrationAvailable: session.businessFlows.includes('registro'),
-                onDiagnostic: diagnostic => logger.warn({ clientId: session.id, businessId: session.businessId, ...diagnostic }, 'Consulta IA no completada'),
-                onBeforeWrite: async consumedState => {
-                  aiStates.set(key, consumedState);
-                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);
-                }
-              });
-              aiStates.set(key, output.state);
-              await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
-              await sendFlowOutput(session, payload.from, output);
-            });
-          }
-
+          async function runLegacyFlows() {
           let handledByRegistrationFlow = false;
-          if (!handledByAdminFlow && !handledByAi && session.businessFlows.includes('registro')) {
+          if (session.businessFlows.includes('registro')) {
             const registrationState = await getBotFlowState(session.id, canonicalConversationJid, 'registration');
             const registrationResult = await handleRegistrationFlow({
               state: registrationState,
@@ -822,7 +766,7 @@ async function connectSession(clientName) {
             }
           }
 
-          if (!handledByAdminFlow && !handledByAi && !handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
+          if (!handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
             let reservationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
             const flowResult = await handleReservationFlow({
               state: reservationState,
@@ -858,6 +802,101 @@ async function connectSession(clientName) {
               await sendBotText(session, payload.from, buildLidVerificationMessage(session));
             }
           }
+          }
+
+          let handledByAi = false;
+          if (!handledByAdminFlow && session.businessFlows.includes('reservas') && aiEnabled(session.businessSettings)) {
+            handledByAi = true;
+            const key = `${session.id}:${session.businessId}:${canonicalConversationJid}`;
+            await serializeAiConversation(key, async () => {
+              if (getAudioMessage(message.message)) {
+                try {
+                  payload.text = await transcribeVoiceMessage({ message, key, download: msg => downloadMediaMessage(msg, 'buffer', { options: { timeout: 15_000, maxContentLength: 5 * 1024 * 1024 } }, { logger, reuploadRequest: socket.updateMediaMessage }) });
+                } catch (error) {
+                  logger.warn({ clientId: session.id, category: error.message === 'Audio too long' ? 'audio_limit' : 'audio_unavailable' }, 'No se pudo procesar la nota de voz');
+                  const reply = error.message === 'Audio too long' ? 'Mandame un audio de hasta un minuto, por favor, o escribime tu consulta.'
+                    : error.message === 'Audio quota reached' ? 'Llegamos al límite de audios por esta hora. Podés escribirme y seguimos por acá.'
+                      : 'No pude entender el audio ahora. ¿Me lo escribís o probás con una nota más corta?';
+                  await sendBotText(session, payload.from, reply);
+                  return;
+                }
+              }
+              const state = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
+              if (useLegacyFallback(state)) {
+                const fallbackState = { ...state, updatedAt: Date.now() };
+                aiStates.set(key, fallbackState);
+                await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', fallbackState);
+                if (hasPendingCheckout(state)) {
+                  const payment = await handleAiConversation({ state, text: 'estado pago', canonicalJid: canonicalConversationJid, reservasApi, businessSettings: session.businessSettings });
+                  payment.state.fallbackMode = true;
+                  aiStates.set(key, payment.state);
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', payment.state);
+                  await sendFlowOutput(session, payload.from, payment);
+                } else {
+                  await runLegacyFlows();
+                }
+                return;
+              }
+              const invitationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
+              const invitationOutput = await handlePendingBirthdayInvitation({
+                state: invitationState, text: payload.text, canonicalJid: canonicalConversationJid,
+                reservasApi, businessName: session.businessName, businessSettings: session.businessSettings
+              });
+              if (invitationOutput) {
+                if (invitationOutput.state) {
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'reservation', invitationOutput.state);
+                } else {
+                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+                }
+                const resumedState = {
+                  ...state, pending: undefined, offTopic: 0, updatedAt: Date.now(),
+                  history: [
+                    ...(state?.history || []),
+                    { role: 'user', parts: [{ text: payload.text }] },
+                    { role: 'model', parts: [{ text: (invitationOutput.replies || []).join('\n') }] }
+                  ].slice(-12)
+                };
+                aiStates.set(key, resumedState);
+                await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', resumedState);
+                await sendFlowOutput(session, payload.from, invitationOutput);
+                return;
+              }
+              const output = await handleAiConversation({
+                state, text: payload.text, canonicalJid: canonicalConversationJid,
+                reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
+                registrationAvailable: session.businessFlows.includes('registro'),
+                onDiagnostic: diagnostic => logger.warn({ clientId: session.id, businessId: session.businessId, ...diagnostic }, 'Consulta IA no completada'),
+                onBeforeWrite: async consumedState => {
+                  aiStates.set(key, consumedState);
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);
+                }
+              });
+              if (output.fallback) {
+                output.state = activateLegacyFallback(output.state);
+                aiStates.set(key, output.state);
+                await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
+                logger.warn({ clientId: session.id }, 'Activado flujo sin IA por indisponibilidad del modelo');
+                if (hasPendingCheckout(output.state)) {
+                  const payment = await handleAiConversation({ state: output.state, text: 'estado pago', canonicalJid: canonicalConversationJid, reservasApi, businessSettings: session.businessSettings });
+                  aiStates.set(key, payment.state);
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', payment.state);
+                  await sendFlowOutput(session, payload.from, payment);
+                } else {
+                  // Do not accept an old legacy draft using this AI message.
+                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+                  await clearBotFlowState(session.id, canonicalConversationJid, 'registration');
+                  await sendBotText(session, payload.from, 'Seguimos con las opciones del menú 😊');
+                  await runLegacyFlows();
+                }
+                return;
+              }
+              aiStates.set(key, output.state);
+              await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
+              await sendFlowOutput(session, payload.from, output);
+            });
+          }
+
+          if (!handledByAdminFlow && !handledByAi) await runLegacyFlows();
           emitAdminEvent('message:new', {
             clientId: session.id,
             direction: 'incoming',

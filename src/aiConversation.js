@@ -196,7 +196,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     next.offTopic = 0;
     return result([question]);
   }
-  if (next.quota.calls >= limit) return result(['Llegamos al límite de consultas por esta hora. Podés volver a escribir más tarde o contactar al negocio.']);
+  if (next.quota.calls >= limit) return { ...result([]), fallback: true };
   if ((next.offTopic || 0) >= 3 && !/cancha|reserv|turno|precio|horario|cumple|seña|sena|ubicaci|disponib/i.test(text)) return result([redirect]);
 
   // Payment webhooks send WhatsApp notifications outside Gemini's history.
@@ -439,7 +439,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
     onDiagnostic({ event: 'provider_error', category });
   }
   finally { live?.close(); }
-  return result(['No pude completar la consulta ahora. Probá de nuevo en un momento o contactá al negocio.']);
+  return { ...result(['No pude completar la consulta ahora. Probá de nuevo en un momento o contactá al negocio.']), fallback: true };
 }
 
 const queues = new Map();

@@ -5,7 +5,6 @@ import {
   crearCliente,
   crearReserva,
   listarCanchas,
-  listarTerminos,
   reservasApiConfigured,
   withReservasApi
 } from './wpReservasApi.js';
@@ -693,8 +692,8 @@ function goBack(state, businessSettings = {}) {
 
   if (state.step === 'ask_name') {
     return {
-      state: buildState('ask_terms', data),
-      replies: [compactTerms(data.terminos || []), termsAcceptancePrompt()]
+      state: buildState('ask_slot', data),
+      replies: [`Elegí el horario:\n${formatSlots(data.slots || [])}`]
     };
   }
 
@@ -718,16 +717,14 @@ function goBack(state, businessSettings = {}) {
   };
 }
 
-function compactTerms(terminos) {
-  if (!terminos.length) return 'Para continuar necesito que aceptes los terminos de la reserva.';
-  return [
-    'Terminos y condiciones de la reserva:',
-    ...terminos.map((item) => `- ${item}`)
-  ].filter(Boolean).join('\n');
+function bookingDetails(data) {
+  if (!data.nombre) return { state: buildState('ask_name', data), replies: ['¿A nombre de quién queda la reserva?'] };
+  if (!parseEmail(data.email)) return { state: buildState('ask_email', data), replies: ['Pasame un email para generar el pago de la seña.'] };
+  return { state: buildState('ask_confirm', data), replies: [summaryMessage(data)] };
 }
 
 function termsAcceptancePrompt() {
-  return 'Para aceptar y seguir, responde SI ACEPTO. Para cambiar el horario, responde VOLVER.';
+  return 'Confirmá los datos del turno para generar el enlace de pago. Las condiciones se envían al acreditarse la seña.';
 }
 
 function formatTurnos(turnos) {
@@ -943,22 +940,16 @@ async function continueSelectedAvailability({
   }
 
   const cliente = identity.cliente || {};
-  const terminos = await listarTerminos({
-    tipo: Number(data.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
-    cancha: data.cancha?.id
-  });
   const nextData = {
     ...data,
     phone,
     nombre: cliente.nombre || pushName || '',
     email: cliente.email || '',
     existingClient: true,
-    terminos
   };
 
   return {
-    state: buildState('ask_terms', nextData),
-    replies: [compactTerms(terminos), termsAcceptancePrompt()]
+    ...bookingDetails(nextData)
   };
 }
 
@@ -1054,30 +1045,10 @@ async function finishRegisterFlow(data, businessSettings = {}, knownEmailIdentit
   }
 
   if (data.after === 'availability_reservation') {
-    const reservationData = data.reservationData || {};
-    const terminos = await listarTerminos({
-      tipo: Number(reservationData.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
-      cancha: reservationData.cancha?.id
-    });
     return {
       targetFlow: 'reservation',
-      state: buildState('ask_terms', {
-        ...reservationData,
-        phone: data.phone,
-        nombre: cliente.nombre || data.nombre,
-        email: cliente.email || data.email,
-        existingClient: true,
-        terminos
-      }),
-      replies: [
-        updatedByExistingEmail
-          ? 'Listo, encontre ese email y asocie el telefono.'
-          : created.created
-            ? 'Listo, ya quedaste registrado.'
-            : 'Listo, ya encontre tus datos.',
-        compactTerms(terminos),
-        termsAcceptancePrompt()
-      ]
+      ...bookingDetails({ ...data.reservationData, phone: data.phone,
+        nombre: cliente.nombre || data.nombre, email: cliente.email || data.email, existingClient: true })
     };
   }
 
@@ -1899,14 +1870,9 @@ async function continueFlow({
       });
     }
 
-    const terminos = await listarTerminos({
-      tipo: Number(data.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
-      cancha: data.cancha?.id
-    });
 
     return {
-      state: buildState('ask_terms', { ...data, slot, terminos }),
-      replies: [compactTerms(terminos), termsAcceptancePrompt()]
+      ...bookingDetails({ ...data, slot })
     };
   }
 
@@ -1946,41 +1912,12 @@ async function continueFlow({
       });
     }
 
-    const terminos = await listarTerminos({
-      tipo: Number(alternative.cancha?.duracion_fija) === 3 ? 'cumple' : 'turno',
-      cancha: alternative.cancha?.id
-    });
     return {
-      state: buildState('ask_terms', { ...selectedData, terminos }),
-      replies: [compactTerms(terminos), termsAcceptancePrompt()]
+      ...bookingDetails(selectedData)
     };
   }
 
-  if (state.step === 'ask_terms') {
-    const accepted = ['si', 'sí', 'si acepto', 'sí acepto', 'acepto'].includes(normalizeText(text));
-    if (!accepted) {
-      return { state, replies: ['Esa no es una opcion valida. Responde "SI ACEPTO" para continuar o "VOLVER" para cambiar el horario.'] };
-    }
-
-    if (!data.nombre) {
-      return {
-        state: buildState('ask_name', { ...data, aceptaTerminos: true }),
-        replies: ['A nombre de quien queda la reserva? Para volver a los terminos, escribi "volver".']
-      };
-    }
-
-    if (!parseEmail(data.email)) {
-      return {
-        state: buildState('ask_email', { ...data, aceptaTerminos: true }),
-        replies: ['Pasame un email para generar el pago de la seña. Para volver, escribi "volver".']
-      };
-    }
-
-    return {
-      state: buildState('ask_confirm', { ...data, aceptaTerminos: true }),
-      replies: [summaryMessage(data)]
-    };
-  }
+  if (state.step === 'ask_terms') return bookingDetails(data);
 
   if (state.step === 'ask_name') {
     const nombre = normalizePersonName(text);
@@ -2028,7 +1965,7 @@ async function continueFlow({
         hora_inicio: data.slot.inicio,
         cancha: data.cancha.id,
         duracion: data.duracion,
-        acepta_terminos: true
+        condiciones_despues_pago: true
       });
     } catch (error) {
       if (isAvailabilityConflict(error)) {
@@ -2074,7 +2011,7 @@ async function continueFlow({
 
 function summaryMessage(data) {
   return [
-    'Confirmame la reserva respondiendo SI:',
+    'Confirmá estos datos con SI para generar el enlace de pago:',
     `Cancha: ${data.cancha?.nombre}`,
     `Fecha: ${displayDate(data.fecha)}`,
     `Horario: ${data.slot?.label || `${data.slot?.inicio} a ${data.slot?.fin}`}`,
@@ -2082,7 +2019,8 @@ function summaryMessage(data) {
     slotPriceText(data.slot),
     validAmount(data.slot?.minimo_senia) ? `Se\u00f1a: ${formatPriceAmount(data.slot.minimo_senia)}` : '',
     `Nombre: ${data.nombre}`,
-    `Email: ${data.email}`
+    `Email: ${data.email}`,
+    'Las condiciones se envían al acreditarse la seña.'
   ].filter(Boolean).join('\n');
 }
 

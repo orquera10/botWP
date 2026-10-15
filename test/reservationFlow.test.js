@@ -469,10 +469,10 @@ test('la opcion 2 pregunta la hora y permite elegir un turno sin pedir datos ant
     reservasApi: registrationApi
   });
   assert.equal(registered.targetFlow, 'reservation');
-  assert.equal(registered.state?.step, 'ask_terms');
+  assert.equal(registered.state?.step, 'ask_confirm');
   assert.equal(registered.state?.data?.slot?.inicio, '18:00');
-  assert.match(registered.replies.join('\n'), /Terminos y condiciones/i);
-  assert.match(registered.replies.join('\n'), /SI ACEPTO/i);
+  assert.doesNotMatch(registered.replies.join('\n'), /Terminos y condiciones|SI ACEPTO/i);
+  assert.match(registered.replies.join('\n'), /condiciones se envían al acreditarse/);
 });
 
 test('si el telefono no existe pero el email si, asocia el telefono sin pedir nombre', async () => {
@@ -767,9 +767,9 @@ test('al elegir un turno alternativo continua la reserva con la nueva cancha', a
     })
   });
 
-  assert.equal(result.state?.step, 'ask_terms');
+  assert.equal(result.state?.step, 'ask_name');
   assert.equal(result.state?.data?.cancha?.id, 2);
-  assert.equal(termsCourt, 2);
+  assert.equal(termsCourt, null);
 });
 
 test('si el turno se ocupa al confirmar ofrece el mismo horario en otra cancha', async () => {
@@ -1023,6 +1023,8 @@ test('el enlace de pago usa los importes finales recalculados por el servidor', 
   assert.match(result.replies.join('\n'), /Total del turno: \$62\.000/);
   assert.match(result.replies.join('\n'), /Se\u00f1a a pagar: \$18\.600/);
   assert.equal(payload.monto_senia, undefined);
+  assert.equal(payload.condiciones_despues_pago, true);
+  assert.equal(payload.acepta_terminos, undefined);
   assert.equal(payload.total, undefined);
 });
 

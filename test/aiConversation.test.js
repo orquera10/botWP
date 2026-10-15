@@ -242,7 +242,7 @@ test('an occupied birthday hour proactively offers the nearest day and only sele
   const accepted = await handleAiConversation({ ...base, text: 'si de 10', state: offered.state, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', { fecha: '2026-10-21', hora_inicio: '17:00', cancha: 1, duracion: 3 })]) });
   assert.equal(accepted.state.requestedDate, '2026-10-23');
   assert.equal(accepted.state.pending.fecha, '2026-10-23');
-  assert.match(accepted.replies[0], /Condiciones/);
+  assert.match(accepted.replies[0], /condiciones se envían al acreditarse/);
 });
 
 test('automatic alternative search stops after seven days', async () => {
@@ -264,7 +264,8 @@ test('changing birthday date does not reuse an old checkout or skip summary and 
       writes++;
       assert.equal(args.fecha, '2026-10-24');
       assert.equal(args.hora_inicio, '13:00');
-      assert.equal(args.acepta_terminos, true);
+      assert.equal(args.condiciones_despues_pago, true);
+      assert.equal(args.acepta_terminos, undefined);
       return { reserva: { ticket_id: 456 }, mercadopago: { init_point: 'https://pago.example/nuevo' } };
     }
   };
@@ -274,7 +275,7 @@ test('changing birthday date does not reuse an old checkout or skip summary and 
   assert.equal(writes, 0);
   assert.match(draft.replies[0], /s?bado 24 de octubre/);
   assert.match(draft.replies[0], /13 a 16/);
-  assert.match(draft.replies[0], /Condiciones del cumpleaños/);
+  assert.doesNotMatch(draft.replies[0], /Condiciones del cumpleaños/);
   assert.doesNotMatch(draft.replies[0], /pago.example\/viejo/);
   const paid = await handleAiConversation({ ...base, text: 'dale', state: draft.state, reservasApi: api });
   assert.equal(writes, 1);
@@ -298,18 +299,19 @@ function fakeGemini(contents, requests = []) {
   };
 }
 
-test('draft verifies slots and terms and does not write until next explicit acceptance', async () => {
+test('draft verifies slots without terms and waits for confirmation to create payment', async () => {
   let writes = 0;
   const api = {
     listarCanchas: async () => [{ id: 1, nombre: 'Cancha 1' }],
     consultarDisponibilidad: async () => [{ fecha: pending.fecha, inicio: '20:00', label: '20 a 21', total: 30000, minimo_senia: 10000 }],
-    listarTerminos: async () => ['Condición de prueba'],
+    listarTerminos: async () => assert.fail('Terms must not be fetched before payment'),
     crearReserva: async payload => { writes++; assert.equal(payload.cliente.telefono, '5493881234567'); return { mercadopago: { init_point: 'https://pago.example' } }; }
   };
   const args = { ...pending, nombre: 'Ana', email: 'ana@example.com' };
   const draft = await handleAiConversation({ ...base, reservasApi: api, fetchImpl: fakeGemini([call('preparar_reserva', args)]) });
   assert.equal(writes, 0);
-  assert.match(draft.replies[0], /Condición de prueba/);
+  assert.doesNotMatch(draft.replies[0], /Condición de prueba|Condiciones:/);
+  assert.match(draft.replies[0], /condiciones se envían al acreditarse/);
   assert.ok(draft.state.pending);
   const confirmed = await handleAiConversation({ ...base, text: 'Sí, acepto', state: draft.state, reservasApi: api, fetchImpl: () => assert.fail('Confirmation must not call Gemini') });
   assert.equal(writes, 1);

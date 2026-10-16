@@ -60,6 +60,8 @@ const els = {
   messageToInput: document.querySelector('#message-to-input'),
   messageTextInput: document.querySelector('#message-text-input'),
   linkAliasForm: document.querySelector('#link-alias-form'),
+  unlinkCustomerForm: document.querySelector('#unlink-customer-form'),
+  unlinkCustomerPhone: document.querySelector('#unlink-customer-phone'),
   aliasLidInput: document.querySelector('#alias-lid-input'),
   aliasPhoneInput: document.querySelector('#alias-phone-input'),
   loadConversationsButton: document.querySelector('#load-conversations-button'),
@@ -556,6 +558,23 @@ async function linkSpecificLid(lid, phone) {
   await Promise.all([loadUnlinkedLids(), loadConversations(), loadMessages()]);
 }
 
+async function unlinkCustomer(event) {
+  event.preventDefault();
+  const client = selectedClient();
+  if (!client) return;
+  const phone = els.unlinkCustomerPhone.value.trim();
+  if (!window.confirm(`¿Desvincular ${phone} del cliente registrado en este negocio? Se reiniciará el chat para probar el registro. Sus reservas y correo se conservan.`)) return;
+  const button = els.unlinkCustomerForm.querySelector('button');
+  button.disabled = true;
+  try {
+    await api(`/clients/${encodeURIComponent(client.id)}/unlink-customer`, { method: 'POST', body: JSON.stringify({ phone, confirm: true }) });
+    els.unlinkCustomerForm.reset();
+    showToast('Cliente desvinculado. Escribí nuevamente por WhatsApp para probar el registro.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadUnlinkedLids() {
   const client = selectedClient();
   if (!client) return;
@@ -678,6 +697,7 @@ els.logoutClientButton.addEventListener('click', () => runClientAction('logout',
 els.deleteClientButton.addEventListener('click', () => deleteSelectedClient().catch((error) => showToast(error.message)));
 els.sendMessageForm.addEventListener('submit', (event) => sendMessage(event).catch((error) => showToast(error.message)));
 els.linkAliasForm.addEventListener('submit', (event) => linkAlias(event).catch((error) => showToast(error.message)));
+els.unlinkCustomerForm.addEventListener('submit', (event) => unlinkCustomer(event).catch((error) => showToast(error.message)));
 els.loadConversationsButton.addEventListener('click', () => loadConversations().catch((error) => showToast(error.message)));
 els.loadLidsButton.addEventListener('click', () => loadUnlinkedLids().catch((error) => showToast(error.message)));
 els.loadMessagesButton.addEventListener('click', () => loadMessages().catch((error) => showToast(error.message)));

@@ -122,6 +122,9 @@ export function createReservasApi(config = {}) {
     },
     crearReserva(payload) {
       return request(resolvedConfig, 'reservar', { method: 'POST', body: payload });
+    },
+    desvincularCliente(telefono) {
+      return request(resolvedConfig, 'desvincular_cliente', { method: 'POST', body: { telefono, confirmar: true } });
     }
   };
 }

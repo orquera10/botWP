@@ -1269,6 +1269,32 @@ async function startSessionHandler(req, res) {
   }
 }
 
+async function unlinkCustomerHandler(req, res) {
+  const session = req.whatsappSession;
+  const phone = normalizeArgentinePhone(req.body.phone);
+  if (!phone || req.body.confirm !== true) return res.status(400).json({ error: 'Indicá el número y confirmá la desvinculación.' });
+  if (!session.businessFlows?.includes('reservas')) return res.status(400).json({ error: 'Esta sesión no tiene reservas habilitadas.' });
+  const jid = `${phone}@s.whatsapp.net`;
+  try {
+    const api = createReservasApi({ baseUrl: session.businessApiUrl, apiKey: session.businessApiKey });
+    await serializeAiConversation(`${session.id}:${session.businessId}:${jid}`, async () => {
+      await api.desvincularCliente(phone);
+      // Keep WhatsApp identity aliases and message history; clear only cached flow data.
+      for (const linked of sessions.values()) {
+        if (linked.businessId !== session.businessId) continue;
+        aiStates.delete(`${linked.id}:${linked.businessId}:${jid}`);
+        for (const flow of ['ai_conversation', 'reservation', 'registration']) {
+          await clearBotFlowState(linked.id, jid, flow);
+        }
+      }
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    const status = [400, 409].includes(error.status) ? error.status : 502;
+    return res.status(status).json({ error: status === 502 ? 'No se pudo completar la desvinculación. Verificá que la API de La Tóxica esté actualizada y volvé a intentar.' : error.message });
+  }
+}
+
 async function sendMessageHandler(req, res) {
   const session = req.whatsappSession;
 
@@ -1594,6 +1620,7 @@ app.post('/clients/:clientName/start', startSessionHandler);
 app.post('/clients/:clientName/reset', resetSessionHandler);
 
 app.post('/clients/:clientName/aliases', linkAliasHandler);
+app.post('/clients/:clientName/unlink-customer', adminAuth, apiAuth, unlinkCustomerHandler);
 
 app.delete('/clients/:clientName', deleteClientHandler);
 

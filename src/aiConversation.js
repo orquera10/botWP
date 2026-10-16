@@ -4,6 +4,7 @@ import { friendlyDate, friendlyRange, availabilityRanges, pricedAvailabilityRang
 import { upcomingWeekday } from './conversationDates.js';
 import { needsCourtSelection, isGeneralDiscountQuery } from './courtSelection.js';
 import { wantsDiscountDays, findDiscountDays } from './discountDays.js';
+import { senderPhoneJid } from './whatsappIdentity.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -125,7 +126,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   }
   if (!acceptedAlternative && next.requestedDate !== previous.requestedDate) delete next.alternativeOffer;
   const result = replies => ({ handled: true, state: next, replies });
-  const phone = canonicalJid?.endsWith('@s.whatsapp.net') ? canonicalJid.split('@')[0] : '';
+  const phone = senderPhoneJid({ key: { remoteJid: canonicalJid } })?.split('@')[0] || '';
   let courts;
   async function listCourts() {
     if (!courts) courts = (await api.listarCanchas()).map(withFootballCapacity);

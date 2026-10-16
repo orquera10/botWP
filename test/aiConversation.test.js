@@ -17,6 +17,17 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
 
+test('device suffix is excluded from customer lookup and registration identity', async () => {
+  const canonicalJid = '5493881234567:26@s.whatsapp.net';
+  const lookup = await handleAiConversation({ ...base, canonicalJid, text: 'hola', reservasApi: { consultarCliente: async ({ telefono }) => { assert.equal(telefono, '5493881234567'); return { exists: false }; } }, fetchImpl: fakeGemini([call('preparar_registro', { nombre: 'Ana', email: 'ana@example.com' })]) });
+  assert.equal(lookup.state.customer.exists, false);
+  assert.equal(lookup.state.pending.kind, 'registration');
+  let writes = 0;
+  const registered = await handleAiConversation({ ...base, canonicalJid, text: 'dale', state: lookup.state, reservasApi: { crearCliente: async ({ telefono }) => { assert.equal(telefono, '5493881234567'); writes++; } } });
+  assert.equal(writes, 1);
+  assert.equal(registered.state.customer.exists, true);
+});
+
 test('friendly agreement creates payment directly without repeating the draft', async () => {
   for (const text of ['Dale mi rey', 'sí de una amigo', 'dale crack']) {
     let writes = 0;

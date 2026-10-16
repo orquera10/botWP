@@ -400,7 +400,7 @@ function normalizeCanonicalPhoneJid(value) {
   const hasJid = raw.includes('@');
   if (hasJid && !raw.endsWith('@s.whatsapp.net')) return null;
 
-  const phonePart = hasJid ? raw.split('@')[0] : raw;
+  const phonePart = hasJid ? raw.split('@')[0].split(':')[0] : raw;
   const digits = phonePart.replace(/\D/g, '');
   const phone = hasJid ? digits : normalizeArgentinePhone(phonePart);
   if (!phone || phone.length < 9 || phone.length > 15) return null;
@@ -646,8 +646,8 @@ async function connectSession(clientName) {
           let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
 
           const automaticPhoneJid = senderPhoneJid(message);
-          if (payload.from?.endsWith('@lid') && automaticPhoneJid) {
-            await linkClientAlias(session, payload.from, automaticPhoneJid);
+          if (automaticPhoneJid) {
+            if (payload.from !== automaticPhoneJid) await linkClientAlias(session, payload.from, automaticPhoneJid);
             canonicalConversationJid = automaticPhoneJid;
           }
 

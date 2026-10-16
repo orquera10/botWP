@@ -60,7 +60,7 @@ const SPECIFIC_QUESTIONS_MESSAGE = `Este número está destinado exclusivamente 
 
 function phoneFromJid(jid) {
   if (!jid?.endsWith('@s.whatsapp.net')) return '';
-  return String(jid.split('@')[0] || '').replace(/\D/g, '');
+  return String(jid.split('@')[0].split(':')[0] || '').replace(/\D/g, '');
 }
 
 function phoneRequestMessage(purpose = 'continuar') {

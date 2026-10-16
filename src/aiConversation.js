@@ -52,7 +52,7 @@ export function isAcceptance(text) {
   if (/^(no hay problema|ningun problema)( gracias)?$/.test(value)) return true;
   if (/\b(no|pero|mejor|cambiar|cambia|otro|otra|cancelar|cancela|espera|todavia|despues|quizas|tal vez|siempre que|si hay|si puedo|si es|si fuera|antes|duda)\b/.test(value)) return false;
   // Accept common conversational agreement and emoji, including polite fillers.
-  const cleaned = value.replace(/\b(muchas gracias|gracias|por favor|porfa)\b/g, '').replace(/[\u{1F3FB}-\u{1F3FF}\uFE0F]/gu, '').replace(/\s+/g, ' ').trim();
+  const cleaned = value.replace(/\b(muchas gracias|gracias|por favor|porfa|mi rey|rey|amigo|amiga|genio|genia|crack|maestro)\b/g, '').replace(/[\u{1F3FB}-\u{1F3FF}\uFE0F]/gu, '').replace(/\s+/g, ' ').trim();
   return /^(?:(?:si|sii+|sip|dale|ok|okay|oki|okey|bueno|perfecto|joya|listo|genial|buenisimo|obvio|claro|seguro|acepto(?: todo| los terminos(?: y condiciones)?)?|confirmo(?: la reserva| los datos)?|confirmar|de acuerdo|estoy de acuerdo|esta bien|esta perfecto|esta todo bien|todo bien|todo correcto|todo ok|me parece bien|me parece perfecto|sin problema|de una|adelante|hagamoslo|reservame|reserva|reservala|quiero reservar|vamos|mandame (?:el )?(?:link|enlace)(?: para pagar)?|pasame (?:el )?(?:link|enlace)(?: para pagar)?|👍|✅|👌|🙌)(?:\s+(?:y\s+)?)?)+$/.test(cleaned);
 }
 const redirect = 'Te puedo ayudar con las canchas, horarios, precios y reservas 😊 ¿Qué necesitás consultar?';
@@ -180,6 +180,14 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
       return result([message]);
     } catch (error) {
       next.history = [];
+      const outdatedPaymentApi = pending.kind !== 'registration' && error.status === 400 && /aceptar.*terminos/.test(normalize(error.data?.message || error.message || ''));
+      onDiagnostic({ event: 'write_error', operation: pending.kind === 'registration' ? 'registration' : 'reservation', status: error.status || null, category: outdatedPaymentApi ? 'payment_api_update_required' : 'write_result_unverified' });
+      if (outdatedPaymentApi) {
+        // This validation rejects the request before any write. An ambiguous failure
+        // must still consume the draft and must never be retried automatically.
+        next.pending = pending;
+        return result(['No pude generar el enlace de pago por un problema del sistema. El turno todavía no está reservado; contactá al negocio para continuar.']);
+      }
       return result([pending.kind === 'registration' ? 'No pude comprobar el resultado del registro. Consultemos tus datos antes de volver a intentarlo.' : error.status === 409 ? 'Ese horario acaba de ocuparse. Decime si buscamos otra opción.' : 'No pude comprobar el resultado de la reserva. Consultá tus turnos antes de volver a intentarlo.']);
     }
   }

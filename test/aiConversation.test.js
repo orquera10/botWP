@@ -16,6 +16,26 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 });
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
+
+test('friendly agreement creates payment directly without repeating the draft', async () => {
+  for (const text of ['Dale mi rey', 'sí de una amigo', 'dale crack']) {
+    let writes = 0;
+    const output = await handleAiConversation({ ...base, text, state: { updatedAt: now, pending }, reservasApi: { crearReserva: async () => { writes++; return { reserva: { ticket_id: 123 }, mercadopago: { init_point: 'https://pago.example' } }; } }, fetchImpl: () => assert.fail('Must not ask Gemini to prepare again') });
+    assert.equal(writes, 1);
+    assert.match(output.replies[0], /https:\/\/pago.example/);
+  }
+  for (const text of ['dale mi rey pero mañana', 'amigo', 'genio, ¿cuánto sale?', 'dale crack a las 22']) assert.equal(isAcceptance(text), false);
+});
+
+test('old API terms rejection is diagnosed without claiming a possibly completed reservation', async () => {
+  let writes = 0;
+  const diagnostics = [];
+  const output = await handleAiConversation({ ...base, text: 'dale', state: { updatedAt: now, pending }, onDiagnostic: item => diagnostics.push(item), reservasApi: { crearReserva: async () => { writes++; const error = new Error('El cliente debe aceptar los terminos y condiciones de la reserva.'); error.status = 400; throw error; } } });
+  assert.equal(writes, 1);
+  assert.deepEqual(output.state.pending, pending);
+  assert.equal(diagnostics[0].category, 'payment_api_update_required');
+  assert.match(output.replies[0], /todavía no está reservado/);
+});
 test('a pricing question receives verified tariff bands instead of one catalog base price', async () => {
   const requests = [];
   const output = await handleAiConversation({ ...base, text: '¿Qué horarios salen más baratos para mañana en Fútbol 5?', reservasApi: {

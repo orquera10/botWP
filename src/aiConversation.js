@@ -42,7 +42,8 @@ const tools = [
 ];
 
 export function aiEnabled(settings = {}) {
-  return settings.aiEnabled !== false && process.env.AI_CONVERSATION_ENABLED === 'true' && Boolean(process.env.GEMINI_API_KEY);
+  const enabled = typeof settings.aiEnabled === 'boolean' ? settings.aiEnabled : process.env.AI_CONVERSATION_ENABLED === 'true';
+  return enabled && Boolean(process.env.GEMINI_API_KEY);
 }
 
 const normalize = text => String(text).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\bmnn\b/g, 'manana').replace(/[.!¡¿?]+$/g, '');

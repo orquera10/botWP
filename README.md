@@ -392,3 +392,16 @@ incluye esos campos y luego desplegar/reiniciar el bot. El bot sigue aceptando
 respuestas antiguas sin importes, pero en ese caso no muestra un precio estimado.
 No se debe enviar un importe calculado por el bot al crear la reserva: el servidor
 PHP calcula la tarifa vigente y la seña.
+
+## Modo de respuestas
+
+En el panel web, abrir Editar negocio, elegir el negocio y seleccionar
+Respuestas del bot: mensajes automáticos con menú o respuestas mejoradas con IA.
+Guardar cambios aplica la preferencia a todos los WhatsApp de ese negocio sin
+reiniciar el proceso. Se guarda en PostgreSQL con la configuración del negocio.
+
+La IA necesita el módulo Reservas y `GEMINI_API_KEY` configurada en el servidor.
+La preferencia guardada en el panel tiene prioridad sobre
+`AI_CONVERSATION_ENABLED`, que queda como valor inicial para negocios sin una
+preferencia guardada. Para desactivar la IA de un negocio configurado desde el
+panel, seleccionar mensajes automáticos y guardar.

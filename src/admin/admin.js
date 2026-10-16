@@ -27,6 +27,8 @@ const els = {
   businessNewButton: document.querySelector('#business-new-button'),
   businessNameInput: document.querySelector('#business-name-input'),
   businessReservationsInput: document.querySelector('#business-reservations-input'),
+  businessResponseModeInput: document.querySelector('#business-response-mode-input'),
+  businessResponseModeHelp: document.querySelector('#business-response-mode-help'),
   businessRegistrationInput: document.querySelector('#business-registration-input'),
   businessAdminAgendaInput: document.querySelector('#business-admin-agenda-input'),
   businessApiUrlInput: document.querySelector('#business-api-url-input'),
@@ -259,6 +261,8 @@ function populateBusinessForm(businessId = '') {
     els.businessEditSelect.value = '';
     els.createBusinessForm.reset();
     els.businessReservationsInput.checked = true;
+    els.businessResponseModeInput.value = 'automatic';
+    els.businessResponseModeHelp.textContent = 'Guardá los cambios para aplicar el modo a los WhatsApp de este negocio.';
     els.businessRegistrationInput.checked = true;
     els.businessAdminAgendaInput.checked = false;
     els.businessFormMode.textContent = 'Creando un negocio nuevo';
@@ -273,6 +277,10 @@ function populateBusinessForm(businessId = '') {
   els.businessEditSelect.value = business.id;
   els.businessNameInput.value = business.name || '';
   els.businessReservationsInput.checked = flows.includes('reservas');
+  els.businessResponseModeInput.value = business.aiActive ? 'ai' : 'automatic';
+  els.businessResponseModeHelp.textContent = business.aiAvailable
+    ? 'Guardá los cambios para aplicar el modo a los WhatsApp de este negocio, sin reiniciar el bot.'
+    : 'Para usar IA falta configurar la clave de Gemini en el servidor. Los mensajes automáticos siguen disponibles.';
   els.businessRegistrationInput.checked = flows.includes('registro');
   els.businessAdminAgendaInput.checked = flows.includes('admin_agenda');
   els.businessApiUrlInput.value = business.apiUrl || '';
@@ -433,6 +441,7 @@ async function createBusiness(event) {
     adminApiUrl: els.businessAdminApiUrlInput.value.trim(),
     adminApiKey: els.businessAdminApiKeyInput.value.trim(),
     settings: {
+      aiEnabled: els.businessResponseModeInput.value === 'ai',
       welcomeMessage: els.businessWelcomeInput.value.trim(),
       catalogUrl: els.businessCatalogUrlInput.value.trim(),
       unregisteredMessage: els.businessUnregisteredInput.value.trim(),

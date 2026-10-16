@@ -1492,7 +1492,8 @@ app.get('/clients', async (_req, res) => {
 
 app.get('/businesses', adminAuth, async (_req, res) => {
   if (isDatabaseEnabled()) {
-    return res.json(await listBusinessProfiles());
+    const businesses = await listBusinessProfiles();
+    return res.json(businesses.map(business => ({ ...business, aiActive: aiEnabled(business.settings), aiAvailable: Boolean(process.env.GEMINI_API_KEY) })));
   }
 
   return res.json([
@@ -1502,6 +1503,8 @@ app.get('/businesses', adminAuth, async (_req, res) => {
       flowType: 'reservas',
       flows: ['registro', 'reservas'],
       settings: defaultBusinessProfile().settings,
+      aiActive: aiEnabled(defaultBusinessProfile().settings),
+      aiAvailable: Boolean(process.env.GEMINI_API_KEY),
       enabled: true
     },
     { id: 'sin-automatizacion', name: 'Sin automatizacion', flowType: 'none', flows: [], enabled: true }
@@ -1539,6 +1542,20 @@ app.post('/businesses', adminAuth, async (req, res) => {
     return res.status(400).json({ error: 'Uno de los modulos seleccionados no es valido.' });
   }
   const existingBusiness = await getBusinessProfile(id);
+  if (req.body.settings?.aiEnabled !== undefined && typeof req.body.settings.aiEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'El modo de respuestas debe ser IA o automático.' });
+  }
+  if (typeof req.body.settings?.aiEnabled === 'boolean') {
+    settings.aiEnabled = req.body.settings.aiEnabled;
+  } else if (typeof existingBusiness?.settings?.aiEnabled === 'boolean') {
+    settings.aiEnabled = existingBusiness.settings.aiEnabled;
+  }
+  if (settings.aiEnabled === true && !process.env.GEMINI_API_KEY) {
+    return res.status(400).json({ error: 'Falta configurar la clave de Gemini en el servidor para habilitar respuestas con IA.' });
+  }
+  if (settings.aiEnabled === true && !flows.includes('reservas')) {
+    return res.status(400).json({ error: 'Activá el módulo Reservas para usar las respuestas con IA.' });
+  }
   if (flows.some((flow) => ['reservas', 'registro'].includes(flow))
     && (!(apiUrl || existingBusiness?.apiUrl) || (!apiKey && !existingBusiness?.apiKey))) {
     return res.status(400).json({ error: 'Reservas y registro necesitan su URL y API key.' });

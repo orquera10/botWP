@@ -1,3 +1,5 @@
+import { readAdminResponse } from './apiResponse.js';
+
 const state = {
   clients: [],
   businesses: [],
@@ -62,6 +64,7 @@ const els = {
   linkAliasForm: document.querySelector('#link-alias-form'),
   unlinkCustomerForm: document.querySelector('#unlink-customer-form'),
   unlinkCustomerPhone: document.querySelector('#unlink-customer-phone'),
+  unlinkCustomerStatus: document.querySelector('#unlink-customer-status'),
   aliasLidInput: document.querySelector('#alias-lid-input'),
   aliasPhoneInput: document.querySelector('#alias-phone-input'),
   loadConversationsButton: document.querySelector('#load-conversations-button'),
@@ -107,15 +110,7 @@ async function api(path, options = {}) {
     }
   });
 
-  const contentType = response.headers.get('content-type') || '';
-  const body = contentType.includes('application/json') ? await response.json() : await response.text();
-
-  if (!response.ok) {
-    const message = typeof body === 'string' ? body : body.error || 'Error de API';
-    throw new Error(message);
-  }
-
-  return body;
+  return readAdminResponse(response);
 }
 
 async function loadApiKey() {
@@ -566,10 +561,15 @@ async function unlinkCustomer(event) {
   if (!window.confirm(`¿Desvincular ${phone} del cliente registrado en este negocio? Se reiniciará el chat para probar el registro. Sus reservas y correo se conservan.`)) return;
   const button = els.unlinkCustomerForm.querySelector('button');
   button.disabled = true;
+  els.unlinkCustomerStatus.textContent = 'Desvinculando…';
   try {
-    await api(`/clients/${encodeURIComponent(client.id)}/unlink-customer`, { method: 'POST', body: JSON.stringify({ phone, confirm: true }) });
+    const result = await api(`/clients/${encodeURIComponent(client.id)}/unlink-customer`, { method: 'POST', body: JSON.stringify({ phone, confirm: true }) });
+    if (result?.ok !== true) throw new Error('El servidor no confirmó la desvinculación. Verificá que el bot esté actualizado.');
     els.unlinkCustomerForm.reset();
+    els.unlinkCustomerStatus.textContent = 'Cliente desvinculado. Escribí nuevamente por WhatsApp para probar el registro.';
     showToast('Cliente desvinculado. Escribí nuevamente por WhatsApp para probar el registro.');
+  } catch (error) {
+    els.unlinkCustomerStatus.textContent = error.message === 'Failed to fetch' ? 'No se pudo conectar con el servidor. Revisá la conexión y volvé a intentar.' : error.message;
   } finally {
     button.disabled = false;
   }

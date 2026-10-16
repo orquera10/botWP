@@ -1447,6 +1447,7 @@ async function birthdayInvitationHandler(req, res) {
 }
 
 app.get('/admin', adminAuth, (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(ADMIN_DIR, 'index.html'));
 });
 
@@ -1471,7 +1472,7 @@ app.get('/admin/events', adminAuth, (req, res) => {
   });
 });
 
-app.use('/admin', adminAuth, express.static(ADMIN_DIR));
+app.use('/admin', adminAuth, express.static(ADMIN_DIR, { setHeaders: res => res.set('Cache-Control', 'no-store') }));
 
 app.get('/', (_req, res) => {
   res.json({

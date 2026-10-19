@@ -30,7 +30,9 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
     throw new Error('Falta configurar la URL o la API key.');
   }
 
-  const url = buildUrl(baseUrl, action, params);
+  const context = config.chatJid && config.sessionId ? { bot_jid: config.chatJid, bot_session: config.sessionId, bot_phone: config.senderPhone || '' } : {};
+  const url = buildUrl(baseUrl, action, { ...params, ...context });
+  if (body) body = { ...body, ...context };
   let response;
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -73,6 +75,9 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
 export function createReservasApi(config = {}) {
   const resolvedConfig = {
     baseUrl: config.baseUrl || '',
+    chatJid: config.chatJid,
+    senderPhone: config.senderPhone,
+    sessionId: config.sessionId,
     apiKey: config.apiKey || '',
     authHeader: config.authHeader || 'X-API-Key',
     adminAgendaAction: config.adminAgendaAction || 'turnos'
@@ -111,6 +116,10 @@ export function createReservasApi(config = {}) {
     consultarInformeMensual({ mes }) {
       return request(resolvedConfig, 'informe_mensual', { params: { mes } });
     },
+    supportsChatIdentity: Boolean(config.chatJid && config.sessionId),
+    registrarChat(payload) {
+      return request(resolvedConfig, 'registrar_chat', { method: 'POST', body: payload });
+    },
     consultarCliente({ telefono, email, nombre }) {
       return request(resolvedConfig, 'cliente', { params: { telefono, email, nombre } });
     },
@@ -137,6 +146,8 @@ export function withReservasApi(api, callback) {
 }
 
 export const reservasApiConfigured = () => activeApi().configured();
+export const chatIdentityEnabled = () => activeApi().supportsChatIdentity === true;
+export const registrarChat = (...args) => activeApi().registrarChat(...args);
 export const listarCanchas = (...args) => activeApi().listarCanchas(...args);
 export const listarTerminos = (...args) => activeApi().listarTerminos(...args);
 export const consultarDisponibilidad = (...args) => activeApi().consultarDisponibilidad(...args);

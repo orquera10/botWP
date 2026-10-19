@@ -47,7 +47,7 @@ import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
 import { useLegacyFallback, activateLegacyFallback, hasPendingCheckout } from './aiFallback.js';
-import { senderPhoneJid } from './whatsappIdentity.js';
+import { senderPhoneJid, senderLidJid } from './whatsappIdentity.js';
 import { handlePendingBirthdayInvitation } from './pendingBirthdayInvitation.js';
 import { getAudioMessage, transcribeVoiceMessage } from './voiceMessages.js';
 
@@ -553,6 +553,8 @@ async function connectSession(clientName) {
       const reservasApi = createReservasApi({
         baseUrl: session.businessApiUrl,
         apiKey: session.businessApiKey,
+        chatJid: canonicalJid,
+        sessionId: session.id,
         adminAgendaAction: normalizeAdminAgendaAction(session.businessSettings.adminAgendaAction)
       });
       const phone = canonicalJid.split('@')[0];
@@ -644,6 +646,7 @@ async function connectSession(clientName) {
         } else {
           await saveIncomingMessage(session, payload);
           let canonicalConversationJid = await getCanonicalConversationJid(session.id, payload.from);
+          canonicalConversationJid = senderLidJid({ key: { remoteJid: canonicalConversationJid } }) || canonicalConversationJid;
 
           const automaticPhoneJid = senderPhoneJid(message);
           if (automaticPhoneJid) {
@@ -687,6 +690,9 @@ async function connectSession(clientName) {
           const reservasApi = createReservasApi({
             baseUrl: session.businessApiUrl,
             apiKey: session.businessApiKey,
+            chatJid: senderLidJid(message) || canonicalConversationJid,
+            senderPhone: automaticPhoneJid?.split('@')[0] || '',
+            sessionId: session.id,
             adminAgendaAction: normalizeAdminAgendaAction(session.businessSettings.adminAgendaAction)
           });
           const adminApi = createReservasApi({
@@ -1272,11 +1278,12 @@ async function startSessionHandler(req, res) {
 async function unlinkCustomerHandler(req, res) {
   const session = req.whatsappSession;
   const phone = normalizeArgentinePhone(req.body.phone);
-  if (!phone || req.body.confirm !== true) return res.status(400).json({ error: 'Indicá el número y confirmá la desvinculación.' });
+  const lid = /^\d{9,20}@lid$/.test(String(req.body.phone || '').trim()) ? String(req.body.phone).trim() : null;
+  if ((!phone && !lid) || req.body.confirm !== true) return res.status(400).json({ error: 'Indicá el número o LID y confirmá la desvinculación.' });
   if (!session.businessFlows?.includes('reservas')) return res.status(400).json({ error: 'Esta sesión no tiene reservas habilitadas.' });
-  const jid = `${phone}@s.whatsapp.net`;
+  const jid = await getCanonicalConversationJid(session.id, lid || `${phone}@s.whatsapp.net`);
   try {
-    const api = createReservasApi({ baseUrl: session.businessApiUrl, apiKey: session.businessApiKey });
+    const api = createReservasApi({ baseUrl: session.businessApiUrl, apiKey: session.businessApiKey, chatJid: jid, sessionId: session.id });
     await serializeAiConversation(`${session.id}:${session.businessId}:${jid}`, async () => {
       await api.desvincularCliente(phone);
       // Keep WhatsApp identity aliases and message history; clear only cached flow data.
@@ -1296,7 +1303,9 @@ async function unlinkCustomerHandler(req, res) {
 }
 
 async function sendMessageHandler(req, res) {
-  const session = req.whatsappSession;
+  const requested = req.body.botSession;
+  const session = requested ? sessions.get(requested) : req.whatsappSession;
+  if (!session) return res.status(404).json({ error: 'Sesión de WhatsApp no disponible.' });
 
   if (!session.sock || session.status !== 'open') {
     return res.status(409).json({
@@ -1405,7 +1414,8 @@ async function sendMessageHandler(req, res) {
 }
 
 async function birthdayInvitationHandler(req, res) {
-  const session = req.whatsappSession;
+  const session = req.body.botSession ? sessions.get(req.body.botSession) : req.whatsappSession;
+  if (!session) return res.status(404).json({ error: 'Sesión de WhatsApp no disponible.' });
   if (!session.sock || session.status !== 'open') {
     return res.status(409).json({ error: 'WhatsApp no está conectado' });
   }
@@ -1796,7 +1806,9 @@ app.get('/messages', (_req, res) => {
 });
 
 app.post('/send', apiAuth, (req, res) => {
-  req.whatsappSession = getOrCreateSession(DEFAULT_SESSION_ID);
+  const requested = req.body.botSession;
+  if (requested && !sessions.has(requested)) return res.status(404).json({ error: 'Sesión de WhatsApp no disponible.' });
+  req.whatsappSession = requested ? sessions.get(requested) : getOrCreateSession(DEFAULT_SESSION_ID);
   return sendMessageHandler(req, res);
 });
 

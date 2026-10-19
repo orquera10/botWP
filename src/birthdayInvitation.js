@@ -121,6 +121,7 @@ function centeredGlyphPath(font, text, centerX, centerY, fontSize) {
 }
 
 export function formatInvitationPhone(value) {
+  if (String(value || '').includes('@lid')) return '';
   let digits = String(value || '').replace(/\D/g, '');
   if (digits.startsWith('549')) digits = digits.slice(3);
   else if (digits.startsWith('54')) digits = digits.slice(2);

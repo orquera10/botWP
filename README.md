@@ -405,3 +405,25 @@ La preferencia guardada en el panel tiene prioridad sobre
 `AI_CONVERSATION_ENABLED`, que queda como valor inicial para negocios sin una
 preferencia guardada. Para desactivar la IA de un negocio configurado desde el
 panel, seleccionar mensajes automáticos y guardar.
+
+## Registro por nombre y chat de WhatsApp
+
+Los chats con IA y con menú identifican al cliente por el chat real de WhatsApp,
+incluido su LID, y la sesión del bot. Si WhatsApp informa el teléfono por sus
+metadatos, también se aprovecha; nunca se interpretan los dígitos de un LID como teléfono.
+Al reservar, un cliente nuevo solo indica nombre y apellido. No se exige correo.
+Una coincidencia con un cliente existente requiere un código enviado al correo
+o WhatsApp ya registrado. Vence en 10 minutos y admite hasta 5 intentos. Los
+homónimos pueden indicar su correo registrado para distinguirse; si no hay un
+contacto verificable, interviene el negocio. No se muestran datos de otros clientes.
+
+El vínculo queda en MySQL, separado del teléfono. La confirmación del pago se
+envía al chat y sesión que originaron cada solicitud, con correo adicional solo
+si el cliente ya lo tiene. El panel permite desvincular también un LID para pruebas.
+
+Desplegar primero en `la_toxica_2` los archivos `wp_bot_identity.php`,
+`wp_reservas_api.php` y `mercadopago_utils.php`, y después actualizar/reiniciar
+el bot. La primera consulta crea las tablas `wp_bot_identities`,
+`wp_bot_challenges` y `wp_bot_booking_chats`; el usuario MySQL necesita permiso
+para crearlas. No se modifican las reservas existentes. El alcance del vínculo
+incluye la API key y la sesión: rotar la API key requiere volver a vincular el chat.

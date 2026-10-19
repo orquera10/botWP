@@ -180,10 +180,10 @@
 
           <section class="panel">
             <h2>Probar el registro</h2>
-            <p>Desvincula un teléfono del cliente de este negocio y reinicia el chat. Conserva el cliente, su correo y sus reservas. Al escribir de nuevo podrás probar el registro o vincularlo por email.</p>
+            <p>Desvincula un número o LID del cliente de este negocio y reinicia el chat. Conserva el cliente, su correo y sus reservas. Al escribir de nuevo podrás probar el registro por nombre completo.</p>
             <form id="unlink-customer-form" class="message-form">
-              <label for="unlink-customer-phone">Número de WhatsApp</label>
-              <input id="unlink-customer-phone" type="tel" placeholder="3884104530" required>
+              <label for="unlink-customer-phone">Número de WhatsApp o LID</label>
+              <input id="unlink-customer-phone" type="text" placeholder="3884104530 o 123456789012345@lid" required>
               <button type="submit">Desvincular cliente para pruebas</button>
               <p id="unlink-customer-status" class="field-help" role="status" aria-live="polite"></p>
             </form>

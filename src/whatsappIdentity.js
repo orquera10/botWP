@@ -9,3 +9,12 @@ export function senderPhoneJid(message) {
   }
   return null;
 }
+
+export function senderLidJid(message) {
+  if (message.key?.remoteJid?.endsWith('@g.us')) return null;
+  for (const value of [message.key?.remoteJid, message.key?.remoteJidAlt]) {
+    const match = typeof value === 'string' && value.match(/^(\d{9,20})(?::\d+)?@lid$/);
+    if (match) return `${match[1]}@lid`;
+  }
+  return null;
+}

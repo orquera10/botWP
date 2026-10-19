@@ -5,6 +5,7 @@ import { upcomingWeekday } from './conversationDates.js';
 import { needsCourtSelection, isGeneralDiscountQuery } from './courtSelection.js';
 import { wantsDiscountDays, findDiscountDays } from './discountDays.js';
 import { senderPhoneJid } from './whatsappIdentity.js';
+import { advanceChatRegistration } from './chatRegistration.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -36,7 +37,7 @@ const tools = [
   declaration('mi_cliente', 'Datos del remitente autenticado.'),
   declaration('catalogo', 'Devuelve el enlace exacto al catálogo online del negocio, productos y precios del catálogo.'),
   declaration('estado_pago', 'Comprueba en el sistema si se acreditó la seña de la solicitud pendiente.'),
-  declaration('preparar_registro', 'Prepara el registro de nombre y email con el teléfono del remitente. Requiere confirmación posterior.', { nombre: str, email: str }, ['nombre', 'email']),
+  declaration('preparar_registro', 'Registra o vincula este chat usando nombre y apellido completos. No pedir teléfono ni correo. Si existe un registro con ese nombre, el servidor verifica con código.', { nombre: str, email: str }, ['nombre']),
   declaration('preparar_reserva', 'Paso obligatorio cuando el cliente quiere reservar y ya eligió horario. Obtiene datos del cliente registrado, muestra un resumen breve y pide confirmar los datos para generar el enlace de seña; las condiciones se envían después de acreditarse el pago. Nombre y email solo si faltan en la base.', { fecha: str, hora_inicio: str, cancha: num, duracion: num, nombre: str, email: str }, ['fecha', 'hora_inicio', 'cancha', 'duracion']),
   declaration('invitacion', 'Genera una tarjeta de cumpleaños con datos suministrados por el usuario.', { nombre: str, fecha: str, inicio: str, fin: str }, ['nombre', 'fecha', 'inicio', 'fin']),
   declaration('fuera_de_tema', 'El mensaje es ajeno al negocio; no usar para saludos, agradecimientos o respuestas breves en contexto.')
@@ -127,6 +128,22 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   if (!acceptedAlternative && next.requestedDate !== previous.requestedDate) delete next.alternativeOffer;
   const result = replies => ({ handled: true, state: next, replies });
   const phone = senderPhoneJid({ key: { remoteJid: canonicalJid } })?.split('@')[0] || '';
+  const chatIdentity = api?.supportsChatIdentity === true && /^\d{9,20}@(lid|s\.whatsapp\.net)$/.test(canonicalJid || '');
+  const identified = Boolean(phone || chatIdentity);
+  if (chatIdentity && next.registration) {
+    if (!registrationAvailable) {
+      delete next.registration;
+      return result(['El registro automático no está habilitado. Podemos seguir consultando canchas y horarios.']);
+    }
+    const registration = await advanceChatRegistration({ api, state: next.registration, text: String(text) });
+    next.registration = registration.state;
+    if (registration.customer) {
+      next.customer = registration.customer;
+      next.history = [];
+      return result([next.resumeBooking ? `¡Listo, ya te registré! ¿Seguimos con el turno del ${friendlyDate(next.resumeBooking.fecha)} a las ${next.resumeBooking.hora_inicio}?` : '¡Listo! Tu chat quedó registrado. ¿Qué cancha y horario necesitás?']);
+    }
+    return result(registration.replies);
+  }
   let courts;
   async function listCourts() {
     if (!courts) courts = (await api.listarCanchas()).map(withFootballCapacity);
@@ -144,7 +161,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     'La reserva se confirma únicamente cuando se acredita el pago. El enlace vence a los 10 minutos de generarlo.'
   ].filter(Boolean).join('\n');
   async function checkPayment() {
-    if (!phone || !next.checkout?.ticketId) return 'No tengo una solicitud de pago para verificar en esta conversación. Consultá tus turnos para revisar el estado.';
+    if (!identified || !next.checkout?.ticketId) return 'No tengo una solicitud de pago para verificar en esta conversación. Consultá tus turnos para revisar el estado.';
     if (next.requestedDate && next.checkout.booking?.fecha !== next.requestedDate) return 'El enlace anterior no corresponde a la fecha que elegiste ahora. Revisemos el resumen del nuevo turno antes de generar su pago. Si pagaste el enlace anterior, contactá al negocio para revisar ese pago.';
     try {
       const data = await api.consultarTurnos({ telefono: phone, futuros: 0, limite: 20 });
@@ -162,7 +179,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   if (next.checkout && /ya pag|pague|(?:hice|realice|complete|envie)\s+(?:el\s+)?(?:pago|transferencia)|estado.*(?:pago|reserva)|acredit|se confirm/i.test(normalize(text))) return result([await checkPayment()]);
 
   if (next.pending && isAcceptance(text)) {
-    if (!phone) return result(['No pude reconocer automáticamente tu cuenta para finalizar la solicitud. Podemos seguir consultando horarios; para completar la reserva, contactá al negocio.']);
+    if (!identified) return result(['No pude reconocer automáticamente tu cuenta para finalizar la solicitud. Podemos seguir consultando horarios; para completar la reserva, contactá al negocio.']);
     const pending = next.pending;
     delete next.pending; // Never retry a possibly completed write automatically.
     try {
@@ -212,7 +229,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   // Payment webhooks send WhatsApp notifications outside Gemini's history.
   // Refresh the exact checkout before composing the next conversational reply.
   let paymentRefresh = 'not_needed';
-  if (phone && next.checkout?.ticketId && next.checkout.status === 'pendiente_pago') {
+  if (identified && next.checkout?.ticketId && next.checkout.status === 'pendiente_pago') {
     try {
       const data = await api.consultarTurnos({ telefono: phone, futuros: 0, limite: 20 });
       const turno = (data.turnos || []).find(t => String(t.ticket_id) === String(next.checkout.ticketId));
@@ -222,7 +239,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   }
 
   // Fetch only by the sender's verified WhatsApp number. No model-selected identity.
-  if (phone && api?.consultarCliente && !next.customer) {
+  if (identified && api?.consultarCliente && !next.customer) {
     try {
       const data = await api.consultarCliente({ telefono: phone });
       next.customer = data.exists && data.cliente ? { exists: true, nombre: data.cliente.nombre, email: data.cliente.email } : { exists: false };
@@ -275,6 +292,7 @@ Consultá herramientas para datos reales. Los precios base pueden variar por hor
 Al preparar una reserva el servidor mostrará un resumen breve, sin condiciones; no hace falta redactarlos. Cualquier expresión clara de acuerdo con lo presentado es válida: “dale”, “ok”, “perfecto”, “de acuerdo”, “sí”, “confirmo” o 👍. No exijas escribir “sí, acepto”. Una duda, negativa o cambio de datos no es aceptación. No inventes ubicación o servicios: si no están en la información del negocio, indicá que no los tenés.
 Para completar una reserva es OBLIGATORIO preparar_reserva, confirmar los datos del turno y generar el enlace de Mercado Pago. Nunca cierres la charla diciendo que ya reservaste o confirmaste: hasta acreditar la seña solo hay una solicitud pendiente. Si dice que pagó, verificá con estado_pago; su mensaje no prueba acreditación. No inventes enlaces. Si quiere reservar y ya tenés cancha, fecha y duración, ejecutá preparar_reserva con la hora elegida, no te limites a prometer que lo harás.
 Datos del cliente obtenidos automáticamente de la base: ${JSON.stringify(next.customer || { consulta: 'no disponible' })}. Reutilizá nombre y email registrados, no los vuelvas a pedir ni expliques verificaciones técnicas. Solo si exists=false pedí nombre y email para registrar al reservar; si existe pero falta un dato, pedí solo ese dato. Una consulta fallida o identidad no disponible NO significa que no esté registrado: no inicies registro en ese caso. Si no se pudo identificar automáticamente, seguí con consultas generales y derivá al negocio únicamente para finalizar la reserva; jamás pidas el número. Antes de pedir datos usá mi_cliente si aún no hay resultado. No uses el nombre de perfil como identidad verificada. Si consulta productos, bebidas para comprar o catálogo, usá catalogo para entregar el enlace exacto.
+${chatIdentity ? `REGLA DEL REGISTRO NUEVO: El chat está identificado aunque no haya teléfono; un LID es válido. Ignorá las instrucciones anteriores de pedir email. Pedí únicamente nombre y apellido completos y usá preparar_registro. El email y el teléfono son opcionales; no los pidas. El servidor verifica las coincidencias de nombre con un código fuera de la IA: no inventes vínculos por nombre. Si hay cliente registrado, permití reservar aunque email esté vacío. Turno elegido antes del registro: ${JSON.stringify(next.resumeBooking || null)}. Si acaba de terminar el registro y quiere seguir, prepará el resumen del turno guardado, sin volver a pedir nombre.` : ''}
 Solicitud de pago actual: ${JSON.stringify(next.checkout || null)}. Si está pendiente, ayudá a pagar; no generes una segunda solicitud igual.
 Estado de la verificación automática del pago: ${paymentRefresh}. El estado actual del sistema prevalece sobre mensajes anteriores del historial que decían pendiente. Si está confirmada, no pidas pagar la seña ni avisar cuando pague; el saldo restante es otra cosa. Ante “dale, gracias”, un agradecimiento o una despedida, respondé cordial y breve sin repetir el pago ni agregar tareas o preguntas innecesarias. Nunca digas “avisame si pagás”: la acreditación es automática. Si no se pudo verificar, no afirmes que pagó ni que falta pagar; un agradecimiento se responde normalmente sin hablar del estado.
 Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, information: businessSettings.aiBusinessInfo })}`;
@@ -385,11 +403,18 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
             case 'estado_pago': direct = await checkPayment(); value = { checked: true }; break;
             case 'mi_cliente':
             case 'mis_turnos':
-              value = phone ? await (call.name === 'mi_cliente' ? api.consultarCliente({ telefono: phone }) : api.consultarTurnos({ telefono: phone })) : { error: 'No se pudo reconocer automáticamente la cuenta. No pedir teléfono ni datos de registro; continuar consultas generales.' };
+              value = identified ? await (call.name === 'mi_cliente' ? api.consultarCliente({ telefono: phone }) : api.consultarTurnos({ telefono: phone })) : { error: 'No se pudo reconocer automáticamente la cuenta. No pedir teléfono ni datos de registro; continuar consultas generales.' };
+              if (call.name === 'mi_cliente' && identified && typeof value.exists === 'boolean') next.customer = value.exists && value.cliente ? { exists: true, ...value.cliente } : { exists: false };
               break;
             case 'fuera_de_tema': next.offTopic = (next.offTopic || 0) + 1; direct = redirect; value = { redirected: true }; break;
             case 'preparar_registro': {
               if (!registrationAvailable) throw new Error('El registro no está habilitado');
+              if (chatIdentity) {
+                const registration = await advanceChatRegistration({ api, text: a.nombre || '' });
+                next.registration = registration.state;
+                if (registration.customer) next.customer = registration.customer;
+                direct = registration.replies.join('\n'); value = { registration: true }; break;
+              }
               if (!phone) throw new Error('Cuenta no identificada automáticamente. No pedir teléfono; derivar al negocio para finalizar.');
               if (!a.nombre?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email || '')) throw new Error('Falta nombre o email válido');
               next.pending = { kind: 'registration', cliente: { nombre: a.nombre.trim(), email: a.email.trim() } };
@@ -399,15 +424,22 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
             case 'preparar_reserva': {
               if (selectionNeeded) throw new Error('Falta elegir cancha o informar jugadores/actividad. Mostrar opciones verificadas y hacer una pregunta breve, sin reservar.');
               if (weekdayOnly) throw new Error('El cliente cambió el día sin elegir una hora. Consultar disponibilidad para mostrar las franjas de la nueva fecha antes de preparar la reserva.');
-              if (!phone) throw new Error('Cuenta no identificada automáticamente. No pedir teléfono; derivar al negocio para finalizar.');
+              if (!identified) throw new Error('Cuenta no identificada automáticamente. No pedir teléfono; derivar al negocio para finalizar.');
               const existing = next.checkout?.booking;
               if (next.checkout?.status === 'pendiente_pago' && now - next.checkout.createdAt < 10 * 60_000 && existing && existing.fecha === a.fecha && existing.hora_inicio === a.hora_inicio && existing.cancha === a.cancha && existing.duracion === a.duracion) { direct = await checkPayment(); value = { pendingPayment: true }; break; }
+              if (chatIdentity && !next.customer) throw new Error('No se pudieron consultar los datos del cliente. Usar mi_cliente para verificar antes de iniciar el registro.');
+              if (chatIdentity && next.customer?.exists !== true) {
+                if (!registrationAvailable) throw new Error('El registro automático no está habilitado para completar la reserva.');
+                next.registration = { phase: 'name' };
+                next.resumeBooking = { fecha: a.fecha, hora_inicio: a.hora_inicio, cancha: a.cancha, duracion: a.duracion };
+                direct = '¿Me pasás tu nombre y apellido completos para registrar la reserva?'; value = { needsRegistration: true }; break;
+              }
               const nombre = next.customer?.nombre?.trim() || a.nombre;
               const registeredEmail = next.customer?.email?.trim();
               const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registeredEmail || '') ? registeredEmail : a.email;
               a.nombre = nombre;
-              a.email = email;
-              if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || !/^\d{2}:\d{2}$/.test(a.hora_inicio) || !Number.isInteger(a.duracion) || a.duracion < 1 || a.duracion > 4 || !a.nombre?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email || '')) throw new Error('Faltan datos válidos de la reserva');
+              a.email = email || '';
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || !/^\d{2}:\d{2}$/.test(a.hora_inicio) || !Number.isInteger(a.duracion) || a.duracion < 1 || a.duracion > 4 || !a.nombre?.trim() || (!chatIdentity && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email || ''))) throw new Error('Faltan datos válidos de la reserva');
               const canchas = await listCourts();
               const cancha = canchas.find(c => c.id === a.cancha);
               if (!cancha || (cancha.duracion_fija && cancha.duracion_fija !== a.duracion)) throw new Error('Cancha o duración no válida');
@@ -420,7 +452,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               value = { prepared: true }; break;
             }
             case 'invitacion': {
-              if (!phone || !a.nombre || !a.fecha || !a.inicio || !a.fin) throw new Error('Faltan datos de la invitación o teléfono');
+              if (!identified || !a.nombre || !a.fecha || !a.inicio || !a.fin) throw new Error('Faltan datos de la invitación');
               const buffer = await createBirthdayInvitation({ name: a.nombre, date: a.fecha, startTime: a.inicio, endTime: a.fin, phone });
               media = [{ buffer, fileName: 'invitacion_personalizada.png', caption: 'Invitación personalizada' }, { path: BIRTHDAY_RULES_IMAGE, fileName: 'reglamento_cancha.png', caption: 'Reglamento para cumpleaños' }];
               direct = `¡Listo! Preparé la invitación para ${a.nombre}.`; value = { generated: true }; break;

@@ -4,10 +4,13 @@ import {
   consultarTurnos,
   crearCliente,
   crearReserva,
+  chatIdentityEnabled,
+  registrarChat,
   listarCanchas,
   reservasApiConfigured,
   withReservasApi
 } from './wpReservasApi.js';
+import { advanceChatRegistration } from './chatRegistration.js';
 import {
   addDaysToIso,
   formatIsoDateForUser,
@@ -59,6 +62,7 @@ const FLOW_TIMEOUT_MINUTES = Math.max(
 const SPECIFIC_QUESTIONS_MESSAGE = `Este número está destinado exclusivamente a reservas. Para dudas o consultas específicas, comunicate con la cancha por WhatsApp:\n${BIRTHDAY_CONTACT_URL}`;
 
 function phoneFromJid(jid) {
+  if (chatIdentityEnabled() && /^\d{9,20}@lid$/.test(jid || '')) return jid;
   if (!jid?.endsWith('@s.whatsapp.net')) return '';
   return String(jid.split('@')[0].split(':')[0] || '').replace(/\D/g, '');
 }
@@ -719,7 +723,7 @@ function goBack(state, businessSettings = {}) {
 
 function bookingDetails(data) {
   if (!data.nombre) return { state: buildState('ask_name', data), replies: ['¿A nombre de quién queda la reserva?'] };
-  if (!parseEmail(data.email)) return { state: buildState('ask_email', data), replies: ['Pasame un email para generar el pago de la seña.'] };
+  if (!chatIdentityEnabled() && !parseEmail(data.email)) return { state: buildState('ask_email', data), replies: ['Pasame un email para generar el pago de la seña.'] };
   return { state: buildState('ask_confirm', data), replies: [summaryMessage(data)] };
 }
 
@@ -960,6 +964,10 @@ async function startRegisterFlow({
   reservationData = null,
   intro = 'Te ayudo a registrarte.'
 }) {
+  if (chatIdentityEnabled()) return {
+    state: buildState('chat_register_name', { phone, pushName, after, reservationData }),
+    replies: ['Para registrarte, ¿me pasás tu nombre y apellido completos?']
+  };
   const nameIdentity = pushName
     ? await identifyClientByName(pushName)
     : { found: false, cliente: null };
@@ -1262,6 +1270,22 @@ async function continueFlow({
         userMenuMessage(businessSettings)
       ].join('\n\n')]
     };
+  }
+
+  if (chatIdentityEnabled() && (state?.step?.startsWith('chat_register_') || ['ask_register_name', 'ask_register_email', 'ask_register_match_phone', 'ask_register_match_email'].includes(state?.step))) {
+    const data = state.data || {};
+    const output = await advanceChatRegistration({ api: { registrarChat }, state: data.chatRegistration || { phase: 'name' }, text });
+    if (!output.customer) return {
+      state: output.state ? buildState(`chat_register_${output.state.phase}`, { ...data, chatRegistration: output.state }) : null,
+      replies: output.replies
+    };
+    const customer = output.customer;
+    const booking = { ...data.reservationData, phone: data.phone || phoneFromJid(canonicalJid), nombre: customer.nombre, email: customer.email || '', existingClient: true };
+    if (data.after === 'availability_reservation') return { targetFlow: 'reservation', ...bookingDetails(booking) };
+    if (data.after === 'availability_choose_slot') return { targetFlow: 'reservation', state: buildState('ask_slot', { ...booking, availabilityOnly: false }), replies: [`Listo. Elegí el horario:\n${formatSlots(booking.slots || [])}`] };
+    if (data.after === 'reservation') return { targetFlow: 'reservation', ...await startFlow({ phone: booking.phone, pushName: customer.nombre }) };
+    if (data.after === 'query') return { targetFlow: 'reservation', ...await startQueryFlow({ phone: booking.phone, pushName: customer.nombre, registrationAvailable }) };
+    return { state: buildState('main_menu', {}), replies: ['¡Listo! Tu chat quedó registrado.', userMenuMessage(businessSettings)] };
   }
 
   if (state && isExpired(state)) {
@@ -1925,6 +1949,7 @@ async function continueFlow({
       return { state, replies: ['Pasame nombre y apellido, por favor.'] };
     }
 
+    if (chatIdentityEnabled()) return bookingDetails({ ...data, nombre, email: data.email || '' });
     return {
       state: buildState('ask_email', { ...data, nombre }),
       replies: ['Genial. Ahora pasame un email para generar el pago de la seña. Para cambiar el nombre, escribi "volver".']
@@ -2019,7 +2044,7 @@ function summaryMessage(data) {
     slotPriceText(data.slot),
     validAmount(data.slot?.minimo_senia) ? `Se\u00f1a: ${formatPriceAmount(data.slot.minimo_senia)}` : '',
     `Nombre: ${data.nombre}`,
-    `Email: ${data.email}`,
+    data.email ? `Email: ${data.email}` : '',
     'Las condiciones se envían al acreditarse la seña.'
   ].filter(Boolean).join('\n');
 }
@@ -2038,6 +2063,7 @@ export async function handleReservationFlow(input) {
 }
 
 function isRegistrationState(state) {
+  if (state?.step?.startsWith('chat_register_')) return true;
   return [
     'ask_register_name',
     'ask_register_email',

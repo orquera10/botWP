@@ -17,6 +17,19 @@ test('football capacity counts both teams and leaves unknown courts unspecified'
 const base = { now, text: 'Quiero reservar', canonicalJid: '5493881234567@s.whatsapp.net', businessName: 'La Tóxica' };
 const pending = { fecha: '2026-10-11', hora_inicio: '20:00', cancha: 1, duracion: 1, cliente: { nombre: 'Ana', email: 'ana@example.com' } };
 
+test('unknown business details deliver the configured specific-questions WhatsApp after consulting terms', async () => {
+  let queried = 0;
+  const output = await handleAiConversation({ ...base, text: '¿Cuánto cuesta la vajilla?', reservasApi: { listarTerminos: async () => { queried++; return ['La vajilla tiene costo adicional (consultar).']; } }, fetchImpl: fakeGemini([call('terminos', { cancha: 1 }), call('consultas_especificas')]) });
+  assert.equal(queried, 1);
+  assert.match(output.replies[0], /https:\/\/wa.me\/5493886002759/);
+  assert.doesNotMatch(output.replies[0], /\$|¿Querés/);
+});
+
+test('a free-text admission of missing price information still includes the contact link', async () => {
+  const output = await handleAiConversation({ ...base, text: '¿Cuánto cuesta la mantelería?', fetchImpl: fakeGemini([reply('No tengo el importe de la mantelería. Consultá al negocio para confirmarlo.')]) });
+  assert.equal(output.replies[0].split('https://wa.me/5493886002759').length, 2);
+});
+
 test('device suffix is excluded from customer lookup and registration identity', async () => {
   const canonicalJid = '5493881234567:26@s.whatsapp.net';
   const lookup = await handleAiConversation({ ...base, canonicalJid, text: 'hola', reservasApi: { consultarCliente: async ({ telefono }) => { assert.equal(telefono, '5493881234567'); return { exists: false }; } }, fetchImpl: fakeGemini([call('preparar_registro', { nombre: 'Ana', email: 'ana@example.com' })]) });

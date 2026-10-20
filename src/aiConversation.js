@@ -1,4 +1,4 @@
-import { createBirthdayInvitation, BIRTHDAY_RULES_IMAGE } from './birthdayInvitation.js';
+import { createBirthdayInvitation, BIRTHDAY_RULES_IMAGE, BIRTHDAY_CONTACT_URL } from './birthdayInvitation.js';
 import { createGeminiLiveTransport, isLiveModel } from './geminiLive.js';
 import { friendlyDate, friendlyRange, availabilityRanges, pricedAvailabilityRanges, numericBookingSummary } from './conversationFormatting.js';
 import { upcomingWeekday } from './conversationDates.js';
@@ -41,7 +41,8 @@ const tools = [
   declaration('preparar_registro', 'Registra o vincula este chat usando nombre y apellido completos. No pedir teléfono ni correo. Si existe un registro con ese nombre, el servidor verifica con código.', { nombre: str, email: str }, ['nombre']),
   declaration('preparar_reserva', 'Paso obligatorio cuando el cliente quiere reservar y ya eligió horario. Usa el cliente vinculado al chat, muestra el resumen real y pide confirmar para generar la seña. Si necesita registrarse, el servidor pide nombre completo. No pedir email ni teléfono en el registro por LID. Las condiciones se envían después de acreditarse el pago.', { fecha: str, hora_inicio: str, cancha: num, duracion: num, nombre: str, email: str }, ['fecha', 'hora_inicio', 'cancha', 'duracion']),
   declaration('invitacion', 'Genera una tarjeta de cumpleaños con datos suministrados por el usuario.', { nombre: str, fecha: str, inicio: str, fin: str }, ['nombre', 'fecha', 'inicio', 'fin']),
-  declaration('fuera_de_tema', 'El mensaje es ajeno al negocio; no usar para saludos, agradecimientos o respuestas breves en contexto.')
+  declaration('fuera_de_tema', 'El mensaje es ajeno al negocio; no usar para saludos, agradecimientos o respuestas breves en contexto.'),
+  declaration('consultas_especificas', 'Entrega el WhatsApp de consultas específicas cuando falta información real del negocio, como el importe de vajilla o mantelería no informado. Consultar primero las herramientas disponibles. No usar para temas ajenos, falta de teléfono/LID ni para reemplazar el registro o generar pagos.')
 ];
 
 export function aiEnabled(settings = {}) {
@@ -156,6 +157,8 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const limit = Math.max(1, Number(process.env.AI_MAX_CALLS_PER_HOUR) || 60);
   next.quota = state?.quota && now - state.quota.start < 3_600_000 ? { ...state.quota } : { start: now, calls: 0 };
   const catalogUrl = businessSettings.catalogUrl || process.env.CATALOG_URL || '';
+  const specificContactUrl = businessSettings.specificContactUrl || BIRTHDAY_CONTACT_URL;
+  const specificContactMessage = `Para confirmarte ese dato, escribinos al WhatsApp de consultas específicas:\n${specificContactUrl}`;
   const paymentMessage = checkout => [
     'Para confirmar el turno tenés que pagar la seña por Mercado Pago. Todavía está pendiente de pago.',
     checkout.booking ? numericBookingSummary(checkout.booking) : '',
@@ -300,6 +303,7 @@ ${chatIdentity ? `Este chat YA está identificado por WhatsApp, aunque solo teng
 No uses el nombre de perfil como identidad verificada. No pidas confirmar datos ni prometas un enlace de pago con un mensaje libre: para eso ejecutá preparar_reserva y dejá que el servidor muestre el resumen real. Un mensaje anterior del historial que preguntaba confirmar NO prueba que exista una solicitud preparada. Frente a un sí sin solicitud preparada, ejecutá preparar_reserva con el turno conversado. Si consulta productos o catálogo, usá catalogo.
 Solicitud de pago actual: ${JSON.stringify(next.checkout || null)}. Si está pendiente, ayudá a pagar; no generes una segunda solicitud igual.
 Estado de la verificación automática del pago: ${paymentRefresh}. El estado actual del sistema prevalece sobre mensajes anteriores del historial que decían pendiente. Si está confirmada, no pidas pagar la seña ni avisar cuando pague; el saldo restante es otra cosa. Ante “dale, gracias”, un agradecimiento o una despedida, respondé cordial y breve sin repetir el pago ni agregar tareas o preguntas innecesarias. Nunca digas “avisame si pagás”: la acreditación es automática. Si no se pudo verificar, no afirmes que pagó ni que falta pagar; un agradecimiento se responde normalmente sin hablar del estado.
+Si una pregunta del negocio no puede responderse con la información disponible, consultá primero las herramientas y luego usá consultas_especificas para entregar el WhatsApp ${specificContactUrl}. No inventes importes. Si condiciones solo dice que vajilla/mantelería tiene costo adicional y preguntan cuánto cuesta, el precio no está informado: derivá con ese enlace, sin preguntar si quiere consultarlo. Esto no aplica a temas ajenos, ni permite omitir el registro por LID o generar una reserva sin pago. Respondé breve, con frases completas.
 Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, information: businessSettings.aiBusinessInfo })}`;
   const contents = [...next.history, { role: 'user', parts: [{ text: String(text) }] }];
   let direct;
@@ -343,7 +347,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
       contents.push(content);
       const calls = content.parts.filter(p => p.functionCall).map(p => p.functionCall);
       if (!calls.length) {
-        const answer = content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n');
+        let answer = content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n');
         if (!answer) throw new Error('Gemini empty text');
         if (incompleteModelText(answer)) throw new Error('Gemini incomplete response');
         const invalidBookingReply = chatIdentity && !next.pending && !next.checkout && (
@@ -369,6 +373,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
           contents.push(content, { role: 'user', parts: [{ text: 'Corrección del servidor: el chat está identificado por LID. No derives por falta de teléfono ni pidas confirmar sin solicitud preparada. Ejecutá mi_cliente si falta verificar el registro; preparar_registro si necesita registrarse, o preparar_reserva para el turno elegido. No generes ni repitas una confirmación textual sin ejecutar la herramienta.' }] });
           continue;
         }
+        if (!answer.includes(specificContactUrl) && /no (?:tengo|dispongo|cuento|conozco).{0,70}(?:dato|informacion|precio|importe)|(?:consulta|contacta|escribi).{0,40}(?:negocio|local)/.test(normalize(answer))) answer += `\n${specificContactUrl}`;
         next.history = [...next.history, { role: 'user', parts: [{ text: String(text) }] }, { role: 'model', parts: [{ text: answer }] }].slice(-12);
         next.offTopic = 0;
         return result([answer]);
@@ -431,6 +436,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               break;
             }
             case 'terminos': value = await api.listarTerminos({ cancha: a.cancha }); break;
+            case 'consultas_especificas': direct = specificContactMessage; value = { url: specificContactUrl }; break;
             case 'catalogo': direct = catalogUrl ? `Podés ver nuestro catálogo online acá:\n${catalogUrl}` : 'No tengo un catálogo online configurado para este negocio.'; value = { url: catalogUrl }; break;
             case 'estado_pago': direct = await checkPayment(); value = { checked: true }; break;
             case 'mi_cliente':

@@ -532,3 +532,14 @@ test('groups over 16 players (e.g. 22 people) route to specific inquiries with t
   assert.match(output.replies[0], /https:\/\/wa\.me\/5493886002759$/);
 });
 
+test('greeting and normal court replies never append the specific-inquiries WhatsApp link', async () => {
+  const output = await handleAiConversation({
+    ...base,
+    text: 'Hola cómo estás?',
+    fetchImpl: fakeGemini([reply('¡Hola! 😊 Te ayudo a consultar horarios y precios, reservar tu cancha, ver tus turnos o el catálogo. ¿Qué necesitás?')])
+  });
+  assert.equal(output.replies[0], '¡Hola! 😊 Te ayudo a consultar horarios y precios, reservar tu cancha, ver tus turnos o el catálogo. ¿Qué necesitás?');
+  assert.doesNotMatch(output.replies[0], /wa\.me/);
+});
+
+

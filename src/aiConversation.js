@@ -377,7 +377,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
           contents.push(content, { role: 'user', parts: [{ text: 'Corrección del servidor: el chat está identificado por LID. No derives por falta de teléfono ni pidas confirmar sin solicitud preparada. Ejecutá mi_cliente si falta verificar el registro; preparar_registro si necesita registrarse, o preparar_reserva para el turno elegido. No generes ni repitas una confirmación textual sin ejecutar la herramienta.' }] });
           continue;
         }
-        if (!answer.includes(specificContactUrl) && /no (?:tengo|dispongo|cuento|conozco|esta aclarado|esta especificado|figura).{0,80}(?:dato|informacion|precio|importe|monto|valor|costo|capacidad|tamano|detalle)|(?:consulta|contacta|escribi|comunica|habla|verlo|verla|gestiona).{0,50}(?:negocio|local|cancha|complejo|predio|whatsapp|administracion|persona)|te paso el (?:contacto|numero|whatsapp|link|enlace)/.test(normalize(answer))) {
+        if (!answer.includes(specificContactUrl) && /no (?:tengo|dispongo|cuento|conozco).{0,50}(?:precio|importe|monto|valor|costo)|(?:consulta|contacta|comunicate).{0,30}(?:al negocio|con el negocio|whatsapp de (?:dudas|consultas) especificas)/.test(normalize(answer))) {
           answer = answer.replace(/¿[^?]*(?:disponibilidad|cumple|reserv|horario|contacto|numero|whatsapp)[^?]*\?\s*$/i, '').trim();
           answer += `\n${specificContactMessage}`;
         }

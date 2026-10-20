@@ -507,3 +507,28 @@ test('business validation errors remain distinct from technical failures and log
   assert.match(JSON.stringify(requests[1].contents), /La fecha supera el plazo permitido/);
   assert.match(JSON.stringify(requests[1].contents), /validation/);
 });
+
+test('asking when to pay the remaining balance after paying the deposit routes to specific inquiries instead of checkPayment', async () => {
+  const state = { updatedAt: now, checkout: { ticketId: 123, status: 'confirmada', createdAt: now } };
+  const output = await handleAiConversation({
+    ...base,
+    text: 'Hola, ya pagué la seña de la cancha, ¿cuándo se cancela el saldo restante?',
+    state,
+    reservasApi: { consultarTurnos: async () => ({ turnos: [{ ticket_id: 123, estado: 'confirmada' }] }) },
+    fetchImpl: fakeGemini([call('consultas_especificas', { respuesta: 'La reserva se asegura con la seña por Mercado Pago, pero para confirmar cómo abonar el saldo restante escribinos por acá.' })])
+  });
+  assert.match(output.replies[0], /saldo restante/);
+  assert.match(output.replies[0], /https:\/\/wa\.me\/5493886002759$/);
+});
+
+test('groups over 16 players (e.g. 22 people) route to specific inquiries with the WhatsApp link', async () => {
+  const output = await handleAiConversation({
+    ...base,
+    text: 'Hola, somos 22 personas para jugar el jueves de 14 a 16',
+    fetchImpl: fakeGemini([call('consultas_especificas', { respuesta: 'La cancha más grande (Fútbol 7/8) incluye hasta 16 jugadores y superar esa cantidad tiene costo extra por jugador adicional.' })])
+  });
+  assert.match(output.replies[0], /16 jugadores/);
+  assert.match(output.replies[0], /Podés consultarlo por acá/);
+  assert.match(output.replies[0], /https:\/\/wa\.me\/5493886002759$/);
+});
+

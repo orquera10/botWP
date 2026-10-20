@@ -71,7 +71,21 @@ test('failed court lookups are not reported as available or unavailable', async 
 });
 
 test('explicit or previously supplied players and court types do not trigger another count question', () => {
-  for (const text of ['somos 10 y quiero cancha mañana', 'quiero cancha de fútbol 5', 'quiero cancha para cumpleaños', 'quiero cancha para 16 personas', 'qué tipos de cancha tenés?']) assert.equal(needsCourtSelection(text), false, text);
+  for (const text of [
+    'somos 10 y quiero cancha mañana',
+    'quiero cancha de fútbol 5',
+    'quiero cancha para cumpleaños',
+    'quiero cancha para 16 personas',
+    'qué tipos de cancha tenés?',
+    'tenés cancha grande para mañana a las 21?',
+    'quiero una f6 para hoy a las 20',
+    'hay fut 5 para mañana?',
+    'busco cancha para jugar 8x8 mañana',
+    'queremos jugar 5 pa 5 hoy',
+    'cancha entera para el viernes',
+    'queremos alquilar dos canchas para un torneo'
+  ]) assert.equal(needsCourtSelection(text), false, text);
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'user', parts: [{ text: 'somos 10' }] }]), false);
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'model', parts: [{ text: '¿Cuántos van a jugar?' }] }, { role: 'user', parts: [{ text: '10' }] }]), false);
 });
+

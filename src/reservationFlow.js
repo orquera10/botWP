@@ -411,7 +411,7 @@ function faqAnswer(text) {
   }
 
   if (/\b(parrilla|parrillas|asado)\b/.test(normalized)) {
-    return 'Sí, está permitido usar la parrilla, pero se requiere un consumo mínimo.';
+    return `En cumpleaños la parrilla está incluida. Para turnos comunes nocturnos tiene un consumo mínimo de $50.000; para los diurnos, podés consultarlo por acá:\n${BIRTHDAY_CONTACT_URL}`;
   }
 
   if (/\b(pechera|pecheras|chaleco|chalecos)\b/.test(normalized)) {

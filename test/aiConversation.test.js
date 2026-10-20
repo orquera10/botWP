@@ -33,14 +33,14 @@ test('a free-text admission of missing price information still includes the cont
 test('specific inquiries preserve verified extra-cost information before adding the contact', async () => {
   const output = await handleAiConversation({ ...base, text: '¿Cuánto cuesta la vajilla?', fetchImpl: fakeGemini([call('consultas_especificas', { respuesta: 'La vajilla y mantelería tienen costo adicional, pero no tengo el monto exacto.' })]) });
   assert.match(output.replies[0], /tienen costo adicional, pero no tengo el monto exacto/);
-  assert.match(output.replies[0], /WhatsApp de dudas específicas/);
+  assert.match(output.replies[0], /Podés consultarlo por acá/);
   assert.match(output.replies[0], /https:\/\/wa.me\/5493886002759$/);
 });
 
 test('missing amount does not divert to availability before giving the specific-inquiries contact', async () => {
   const output = await handleAiConversation({ ...base, text: '¿Cuánto cuesta la mantelería?', fetchImpl: fakeGemini([reply('La vajilla y mantelería tienen costo adicional, pero no tengo el monto exacto acá. ¿Querés que consultemos disponibilidad para el cumple?')]) });
   assert.match(output.replies[0], /tienen costo adicional/);
-  assert.match(output.replies[0], /WhatsApp de dudas específicas/);
+  assert.match(output.replies[0], /Podés consultarlo por acá/);
   assert.doesNotMatch(output.replies[0], /disponibilidad/);
 });
 

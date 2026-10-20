@@ -6,6 +6,7 @@ import { needsCourtSelection, isGeneralDiscountQuery } from './courtSelection.js
 import { wantsDiscountDays, findDiscountDays } from './discountDays.js';
 import { senderPhoneJid } from './whatsappIdentity.js';
 import { advanceChatRegistration } from './chatRegistration.js';
+import { incompleteModelText } from './aiResponse.js';
 
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
@@ -328,9 +329,10 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
           const data = await response.json();
           content = data.candidates?.[0]?.content;
           if (!content?.parts?.some(p => p.functionCall || (p.text?.trim() && !p.thought))) throw new Error('Gemini empty response');
+          if (!content.parts.some(p => p.functionCall) && (data.candidates?.[0]?.finishReason === 'MAX_TOKENS' || incompleteModelText(content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n')))) throw new Error('Gemini incomplete response');
           break;
         } catch (error) {
-          const transient = /HTTP (500|502|503|504)\b|timeout|timed out|empty (response|text|transcript)|connection (error|closed)|fetch failed|ECONNRESET|UNAVAILABLE|INTERNAL|invalid response|tool call cancelled/i.test(String(error.message || ''));
+          const transient = /HTTP (500|502|503|504)\b|timeout|timed out|empty (response|text|transcript)|connection (error|closed)|fetch failed|ECONNRESET|UNAVAILABLE|INTERNAL|invalid response|incomplete response|tool call cancelled/i.test(String(error.message || ''));
           if (!transient || attempt === 2) throw error;
           onDiagnostic({ event: 'provider_retry', attempt: attempt + 1 });
           live?.close();
@@ -343,6 +345,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
       if (!calls.length) {
         const answer = content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n');
         if (!answer) throw new Error('Gemini empty text');
+        if (incompleteModelText(answer)) throw new Error('Gemini incomplete response');
         const invalidBookingReply = chatIdentity && !next.pending && !next.checkout && (
           /(?:no (?:pude|puedo|logre)|no se pudo).{0,50}identific/.test(normalize(answer)) ||
           (/confirm[aeá]?s?\b/.test(normalize(answer)) && /link|enlace|pago|sena/.test(normalize(answer)))

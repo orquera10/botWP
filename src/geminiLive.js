@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { incompleteModelText } from './aiResponse.js';
 
 export const isLiveModel = model => /(?:^|-)live(?:-|$)/.test(model);
 
@@ -92,9 +93,11 @@ export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, t
             if (part.text && !part.thought) text += part.text;
           }
           // Audio chunks are intentionally discarded; WhatsApp receives the transcript.
-          if (server?.turnComplete && !toolPending) {
+          if (server?.interrupted && !toolPending) { fail('Gemini Live incomplete response'); return; }
+          if (server?.turnComplete && server.interactionStatus !== 'IN_PROGRESS' && !toolPending) {
             const answer = body.audioPcm ? inputTranscript.trim() : transcript.trim() || text.trim();
             if (!answer) { fail('Gemini Live empty transcript'); return; }
+            if (!body.audioPcm && incompleteModelText(answer)) { fail('Gemini Live incomplete response'); return; }
             complete(null, { role: 'model', parts: [{ text: answer }] });
           }
         } catch { fail('Gemini Live invalid response'); }

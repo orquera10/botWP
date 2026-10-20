@@ -16,6 +16,23 @@ class FakeSocket extends EventEmitter {
 }
 const options = { body: JSON.stringify({ systemInstruction: { parts: [{ text: 'Recepcionista' }] }, tools: [], contents: [{ role: 'user', parts: [{ text: 'Hola' }] }] }) };
 
+test('Live waits while the server reports background processing, instead of sending a cut-off question', async () => {
+  const live = createGeminiLiveTransport({ model: 'live', apiKey: 'test', Socket: FakeSocket });
+  const pending = live.request('', options);
+  await Promise.resolve();
+  FakeSocket.instance.frame({ serverContent: { outputTranscription: { text: 'Tiene costo adicional. ¿Querés' }, turnComplete: true, interactionStatus: 'IN_PROGRESS' } });
+  FakeSocket.instance.frame({ serverContent: { outputTranscription: { text: ' consultar el precio?' }, turnComplete: true, interactionStatus: 'IDLE' } });
+  assert.equal((await (await pending).json()).candidates[0].content.parts[0].text, 'Tiene costo adicional. ¿Querés consultar el precio?');
+  live.close();
+});
+
+test('Live rejects a clearly unfinished reply instead of returning it to WhatsApp', async () => {
+  const live = createGeminiLiveTransport({ model: 'live', apiKey: 'test', Socket: FakeSocket });
+  const pending = live.request('', options);
+  FakeSocket.instance.frame({ serverContent: { outputTranscription: { text: 'Tiene costo adicional. ¿Querés' }, turnComplete: true } });
+  await assert.rejects(pending, /incomplete response/);
+});
+
 test('voice input sends PCM with explicit boundaries and returns only the customer transcription', async () => {
   const live = createGeminiLiveTransport({ model: 'gemini-3.1-flash-live-preview', apiKey: 'test', Socket: FakeSocket });
   const pcm = Buffer.alloc(6400, 1);

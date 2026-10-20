@@ -13,5 +13,6 @@ test('truncated provider text retries without sending or saving the incomplete r
   assert.equal(calls, 2);
   assert.equal(result.state.quota.calls, 2);
   assert.doesNotMatch(JSON.stringify(result.state.history), /¿Querés/);
-  assert.match(result.replies[0], /importe\.$/);
+  assert.match(result.replies[0], /importe\./);
+  assert.match(result.replies[0], /https:\/\/wa.me\/5493886002759$/);
 });

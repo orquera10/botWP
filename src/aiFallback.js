@@ -1,11 +1,14 @@
-// Stay in the legacy flow until the conversation has been idle for 30 minutes.
-// This matches the existing AI conversation lifetime and avoids switching menus mid-flow.
-export function useLegacyFallback(state, now = Date.now()) {
-  return state?.fallbackMode === true && now - state.updatedAt < 30 * 60_000;
+// The fallback handles only the failed message. Retry AI on the next one.
+export function prepareAiRetry(state) {
+  if (!state?.fallbackMode) return state;
+  const next = { ...state };
+  delete next.fallbackMode;
+  delete next.fallbackReason;
+  return next;
 }
 
 export function activateLegacyFallback(state, now = Date.now()) {
-  return { ...state, pending: undefined, history: [], fallbackMode: true, updatedAt: now };
+  return { ...state, pending: undefined, history: [...(state?.history || [])], fallbackMode: true, updatedAt: now };
 }
 
 export function hasPendingCheckout(state, now = Date.now()) {

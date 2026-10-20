@@ -66,6 +66,8 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const fresh = state?.updatedAt && now - state.updatedAt < 30 * 60_000;
   const previous = fresh ? state : {};
   const next = { ...previous, history: [...(previous.history || [])], updatedAt: now };
+  delete next.fallbackMode;
+  delete next.fallbackReason;
   if (businessSettings.aiModeRevision) next.responseModeRevision = businessSettings.aiModeRevision;
   if (next.checkout) next.checkout = { ...next.checkout };
   const acceptedAlternative = next.alternativeOffer && !next.pending && isAcceptance(text);

@@ -48,7 +48,7 @@ import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
-import { useLegacyFallback, activateLegacyFallback, hasPendingCheckout, applyResponseModeRevision } from './aiFallback.js';
+import { prepareAiRetry, activateLegacyFallback, hasPendingCheckout, applyResponseModeRevision } from './aiFallback.js';
 import { senderPhoneJid, senderLidJid } from './whatsappIdentity.js';
 import { handlePendingBirthdayInvitation } from './pendingBirthdayInvitation.js';
 import { getAudioMessage, transcribeVoiceMessage } from './voiceMessages.js';
@@ -772,6 +772,7 @@ async function connectSession(clientName) {
             for (const reply of registrationResult.replies || []) {
               await sendBotText(session, payload.from, reply);
             }
+            if (handledByRegistrationFlow) return registrationResult;
           }
 
           if (!handledByRegistrationFlow && session.businessFlows.includes('reservas')) {
@@ -809,6 +810,7 @@ async function connectSession(clientName) {
             ) {
               await sendBotText(session, payload.from, buildLidVerificationMessage(session));
             }
+            return flowResult;
           }
           }
 
@@ -830,22 +832,7 @@ async function connectSession(clientName) {
                 }
               }
               const savedState = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
-              const state = applyResponseModeRevision(savedState, session.businessSettings.aiModeRevision);
-              if (useLegacyFallback(state)) {
-                const fallbackState = { ...state, updatedAt: Date.now() };
-                aiStates.set(key, fallbackState);
-                await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', fallbackState);
-                if (hasPendingCheckout(state)) {
-                  const payment = await handleAiConversation({ state, text: 'estado pago', canonicalJid: canonicalConversationJid, reservasApi, businessSettings: session.businessSettings });
-                  payment.state.fallbackMode = true;
-                  aiStates.set(key, payment.state);
-                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', payment.state);
-                  await sendFlowOutput(session, payload.from, payment);
-                } else {
-                  await runLegacyFlows();
-                }
-                return;
-              }
+              const state = prepareAiRetry(applyResponseModeRevision(savedState, session.businessSettings.aiModeRevision));
               const invitationState = await getBotFlowState(session.id, canonicalConversationJid, 'reservation');
               const invitationOutput = await handlePendingBirthdayInvitation({
                 state: invitationState, text: payload.text, canonicalJid: canonicalConversationJid,
@@ -892,11 +879,20 @@ async function connectSession(clientName) {
                   await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', payment.state);
                   await sendFlowOutput(session, payload.from, payment);
                 } else {
-                  // Do not accept an old legacy draft using this AI message.
-                  await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
-                  await clearBotFlowState(session.id, canonicalConversationJid, 'registration');
+                  // Keep the menu usable across consecutive AI failures, but never
+                  // revive a draft left over from an earlier conversation or mode.
+                  if (!savedState?.fallbackMode || savedState.responseModeRevision !== state?.responseModeRevision) {
+                    await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
+                    await clearBotFlowState(session.id, canonicalConversationJid, 'registration');
+                  }
                   await sendBotText(session, payload.from, 'Seguimos con las opciones del menú 😊');
-                  await runLegacyFlows();
+                  const legacyOutput = await runLegacyFlows();
+                  output.state.history = [...(output.state.history || []),
+                    { role: 'user', parts: [{ text: payload.text }] },
+                    { role: 'model', parts: [{ text: (legacyOutput?.replies || []).join('\n') }] }
+                  ].slice(-12);
+                  aiStates.set(key, output.state);
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
                 }
                 return;
               }

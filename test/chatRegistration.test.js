@@ -7,6 +7,36 @@ import { handleRegistrationFlow, handleReservationFlow } from '../src/reservatio
 const now = Date.UTC(2026, 9, 19, 15);
 const jid = '123456789012345@lid';
 const customer = { id: 9, nombre: 'María Pérez', email: '', telefono: '' };
+
+test('an invented identity failure starts name registration instead of sending the customer away', async () => {
+  const output = await handleAiConversation({ now, canonicalJid: jid, text: 'confirmo', reservasApi: { supportsChatIdentity: true, consultarCliente: async () => ({ exists: false }) }, fetchImpl: async () => ({ ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: 'No pude identificar tu cuenta automáticamente. Contactá al negocio para generar el link.' }] } }] }) }) });
+  assert.equal(output.state.registration.phase, 'name');
+  assert.match(output.replies[0], /nombre y apellido/);
+  assert.doesNotMatch(output.replies[0], /contact|identificar/);
+});
+
+test('an explicit name in the booking message is used directly when the model repeats a fake confirmation', async () => {
+  let registrations = 0;
+  const output = await handleAiConversation({ now, canonicalJid: jid, text: 'Me reservas cancha Fútbol 5 para mañana\nA nombre de Nestor Cano', reservasApi: { supportsChatIdentity: true, consultarCliente: async () => ({ exists: false }), registrarChat: async ({ nombre }) => { registrations++; assert.equal(nombre, 'Nestor Cano'); return { status: 'verification_required', message: 'Te envié un código al correo registrado.' }; } }, fetchImpl: async () => ({ ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: '¿Confirmás estos datos para generar el link de seña?' }] } }] }) }) });
+  assert.equal(registrations, 1);
+  assert.equal(output.state.registration.phase, 'code');
+  assert.match(output.replies[0], /código/);
+});
+
+test('a linked LID recovers from a fake confirmation by executing the real draft tool', async () => {
+  let calls = 0;
+  const api = { supportsChatIdentity: true, consultarCliente: async () => ({ exists: true, cliente: customer }), listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 5' }], consultarDisponibilidad: async () => [{ fecha: '2026-10-20', inicio: '22:00', total: 100, minimo_senia: 30 }] };
+  const output = await handleAiConversation({ now, canonicalJid: jid, text: 'confirmo', reservasApi: api, fetchImpl: async (_url, options) => {
+    const prompt = JSON.parse(options.body).systemInstruction.parts[0].text;
+    assert.doesNotMatch(prompt, /Si no se pudo identificar el remitente/);
+    calls++;
+    const part = calls === 1 ? { text: '¿Confirmás los datos para generar el link de pago?' } : { functionCall: { name: 'preparar_reserva', args: { fecha: '2026-10-20', hora_inicio: '22:00', cancha: 1, duracion: 1 } } };
+    return { ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [part] } }] }) };
+  } });
+  assert.equal(calls, 2);
+  assert.equal(output.state.pending.hora_inicio, '22:00');
+  assert.match(output.replies[0], /Total: \$100/);
+});
 test('full name is sufficient for a new customer, without email or invented phone', async () => {
   assert.equal(fullNameValid('María Pérez'), true);
   assert.equal(fullNameValid('María'), false);

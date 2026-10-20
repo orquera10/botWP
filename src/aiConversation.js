@@ -38,7 +38,7 @@ const tools = [
   declaration('catalogo', 'Devuelve el enlace exacto al catálogo online del negocio, productos y precios del catálogo.'),
   declaration('estado_pago', 'Comprueba en el sistema si se acreditó la seña de la solicitud pendiente.'),
   declaration('preparar_registro', 'Registra o vincula este chat usando nombre y apellido completos. No pedir teléfono ni correo. Si existe un registro con ese nombre, el servidor verifica con código.', { nombre: str, email: str }, ['nombre']),
-  declaration('preparar_reserva', 'Paso obligatorio cuando el cliente quiere reservar y ya eligió horario. Obtiene datos del cliente registrado, muestra un resumen breve y pide confirmar los datos para generar el enlace de seña; las condiciones se envían después de acreditarse el pago. Nombre y email solo si faltan en la base.', { fecha: str, hora_inicio: str, cancha: num, duracion: num, nombre: str, email: str }, ['fecha', 'hora_inicio', 'cancha', 'duracion']),
+  declaration('preparar_reserva', 'Paso obligatorio cuando el cliente quiere reservar y ya eligió horario. Usa el cliente vinculado al chat, muestra el resumen real y pide confirmar para generar la seña. Si necesita registrarse, el servidor pide nombre completo. No pedir email ni teléfono en el registro por LID. Las condiciones se envían después de acreditarse el pago.', { fecha: str, hora_inicio: str, cancha: num, duracion: num, nombre: str, email: str }, ['fecha', 'hora_inicio', 'cancha', 'duracion']),
   declaration('invitacion', 'Genera una tarjeta de cumpleaños con datos suministrados por el usuario.', { nombre: str, fecha: str, inicio: str, fin: str }, ['nombre', 'fecha', 'inicio', 'fin']),
   declaration('fuera_de_tema', 'El mensaje es ajeno al negocio; no usar para saludos, agradecimientos o respuestas breves en contexto.')
 ];
@@ -291,8 +291,9 @@ Los IDs internos los obtenés con canchas: nunca se los pidas al cliente. Las pr
 Consultá herramientas para datos reales. Los precios base pueden variar por horario: informá el precio del slot consultado. Pedí solo datos faltantes; aceptá varios datos juntos. Usá YYYY-MM-DD y HH:mm. Respetá duración fija. No afirmes que reservaste: preparar_reserva solo prepara la confirmación. Para registrar sin reservar usá preparar_registro únicamente si el cliente lo pide. El servidor identifica al remitente automáticamente; nunca consultes datos de terceros y NUNCA pidas que escriba o comparta su teléfono o número de WhatsApp.
 Al preparar una reserva el servidor mostrará un resumen breve, sin condiciones; no hace falta redactarlos. Cualquier expresión clara de acuerdo con lo presentado es válida: “dale”, “ok”, “perfecto”, “de acuerdo”, “sí”, “confirmo” o 👍. No exijas escribir “sí, acepto”. Una duda, negativa o cambio de datos no es aceptación. No inventes ubicación o servicios: si no están en la información del negocio, indicá que no los tenés.
 Para completar una reserva es OBLIGATORIO preparar_reserva, confirmar los datos del turno y generar el enlace de Mercado Pago. Nunca cierres la charla diciendo que ya reservaste o confirmaste: hasta acreditar la seña solo hay una solicitud pendiente. Si dice que pagó, verificá con estado_pago; su mensaje no prueba acreditación. No inventes enlaces. Si quiere reservar y ya tenés cancha, fecha y duración, ejecutá preparar_reserva con la hora elegida, no te limites a prometer que lo harás.
-Datos del cliente obtenidos automáticamente de la base: ${JSON.stringify(next.customer || { consulta: 'no disponible' })}. Reutilizá nombre y email registrados, no los vuelvas a pedir ni expliques verificaciones técnicas. Solo si exists=false pedí nombre y email para registrar al reservar; si existe pero falta un dato, pedí solo ese dato. Una consulta fallida o identidad no disponible NO significa que no esté registrado: no inicies registro en ese caso. Si no se pudo identificar automáticamente, seguí con consultas generales y derivá al negocio únicamente para finalizar la reserva; jamás pidas el número. Antes de pedir datos usá mi_cliente si aún no hay resultado. No uses el nombre de perfil como identidad verificada. Si consulta productos, bebidas para comprar o catálogo, usá catalogo para entregar el enlace exacto.
-${chatIdentity ? `REGLA DEL REGISTRO NUEVO: El chat está identificado aunque no haya teléfono; un LID es válido. Ignorá las instrucciones anteriores de pedir email. Pedí únicamente nombre y apellido completos y usá preparar_registro. El email y el teléfono son opcionales; no los pidas. El servidor verifica las coincidencias de nombre con un código fuera de la IA: no inventes vínculos por nombre. Si hay cliente registrado, permití reservar aunque email esté vacío. Turno elegido antes del registro: ${JSON.stringify(next.resumeBooking || null)}. Si acaba de terminar el registro y quiere seguir, prepará el resumen del turno guardado, sin volver a pedir nombre.` : ''}
+Datos del cliente obtenidos automáticamente de la base: ${JSON.stringify(next.customer || { consulta: 'no disponible' })}.
+${chatIdentity ? `Este chat YA está identificado por WhatsApp, aunque solo tenga LID y no teléfono. NUNCA digas que no pudiste identificar la cuenta ni derives al negocio por falta de teléfono. Si exists=false, pedí únicamente nombre y apellido completos y ejecutá preparar_registro; si ya los dio explícitamente en el mensaje, usalos sin volver a pedirlos. No pidas email ni teléfono. El servidor verifica coincidencias con código: no vincules personas solo por nombre. Si exists=true, ejecutá preparar_reserva aunque el correo esté vacío. Turno elegido antes del registro: ${JSON.stringify(next.resumeBooking || null)}. Una consulta fallida requiere reintentar mi_cliente, no afirmar que la identidad no existe.` : `Reutilizá nombre y email registrados. Solo si exists=false pedí datos faltantes al reservar. Una consulta fallida no significa que no esté registrado. Si no se pudo identificar el remitente, derivá al negocio únicamente para finalizar; nunca pidas el número.`}
+No uses el nombre de perfil como identidad verificada. No pidas confirmar datos ni prometas un enlace de pago con un mensaje libre: para eso ejecutá preparar_reserva y dejá que el servidor muestre el resumen real. Un mensaje anterior del historial que preguntaba confirmar NO prueba que exista una solicitud preparada. Frente a un sí sin solicitud preparada, ejecutá preparar_reserva con el turno conversado. Si consulta productos o catálogo, usá catalogo.
 Solicitud de pago actual: ${JSON.stringify(next.checkout || null)}. Si está pendiente, ayudá a pagar; no generes una segunda solicitud igual.
 Estado de la verificación automática del pago: ${paymentRefresh}. El estado actual del sistema prevalece sobre mensajes anteriores del historial que decían pendiente. Si está confirmada, no pidas pagar la seña ni avisar cuando pague; el saldo restante es otra cosa. Ante “dale, gracias”, un agradecimiento o una despedida, respondé cordial y breve sin repetir el pago ni agregar tareas o preguntas innecesarias. Nunca digas “avisame si pagás”: la acreditación es automática. Si no se pudo verificar, no afirmes que pagó ni que falta pagar; un agradecimiento se responde normalmente sin hablar del estado.
 Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, information: businessSettings.aiBusinessInfo })}`;
@@ -303,6 +304,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
   try {
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     if (isLiveModel(model)) live = liveTransportFactory({ model, apiKey: process.env.GEMINI_API_KEY });
+    let correctedBookingReply = false;
     for (let round = 0; round < 5; round++) {
       let content;
       // Retry only provider requests, before any returned tool is executed.
@@ -337,6 +339,29 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
       if (!calls.length) {
         const answer = content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n');
         if (!answer) throw new Error('Gemini empty text');
+        const invalidBookingReply = chatIdentity && !next.pending && !next.checkout && (
+          /(?:no (?:pude|puedo|logre)|no se pudo).{0,50}identific/.test(normalize(answer)) ||
+          (/confirm[aeá]?s?\b/.test(normalize(answer)) && /link|enlace|pago|sena/.test(normalize(answer)))
+        );
+        if (invalidBookingReply) {
+          onDiagnostic({ event: 'booking_reply_recovery', category: next.customer?.exists === false ? 'registration_required' : 'draft_required' });
+          if (next.customer?.exists === false && registrationAvailable) {
+            next.registration = { phase: 'name' };
+            if (next.availability && next.requestedHour) next.resumeBooking = { ...next.availability, hora_inicio: next.requestedHour };
+            const named = String(text).match(/(?:^|\n)\s*a nombre de\s+([^\n,.!?]+)/i);
+            if (named) {
+              const registration = await advanceChatRegistration({ api, text: named[1].trim() });
+              next.registration = registration.state;
+              if (registration.customer) next.customer = registration.customer;
+              return result(registration.replies);
+            }
+            return result(['¿Me pasás tu nombre y apellido completos para continuar con la reserva?']);
+          }
+          if (correctedBookingReply) throw new Error('Provider did not prepare booking');
+          correctedBookingReply = true;
+          contents.push(content, { role: 'user', parts: [{ text: 'Corrección del servidor: el chat está identificado por LID. No derives por falta de teléfono ni pidas confirmar sin solicitud preparada. Ejecutá mi_cliente si falta verificar el registro; preparar_registro si necesita registrarse, o preparar_reserva para el turno elegido. No generes ni repitas una confirmación textual sin ejecutar la herramienta.' }] });
+          continue;
+        }
         next.history = [...next.history, { role: 'user', parts: [{ text: String(text) }] }, { role: 'model', parts: [{ text: answer }] }].slice(-12);
         next.offTopic = 0;
         return result([answer]);

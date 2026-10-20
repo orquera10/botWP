@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import express from 'express';
 import cors from 'cors';
@@ -26,6 +27,7 @@ import {
   linkConversationAlias,
   listConversations,
   listBusinessProfiles,
+  listAiFallbackStatus,
   listDbClients,
   listMessages,
   listUnlinkedLidConversations,
@@ -46,7 +48,7 @@ import { normalizeArgentinePhone } from './phoneUtils.js';
 import { handleAdminScheduleFlow } from './adminScheduleFlow.js';
 import { createReservasApi } from './wpReservasApi.js';
 import { aiEnabled, handleAiConversation, serializeAiConversation } from './aiConversation.js';
-import { useLegacyFallback, activateLegacyFallback, hasPendingCheckout } from './aiFallback.js';
+import { useLegacyFallback, activateLegacyFallback, hasPendingCheckout, applyResponseModeRevision } from './aiFallback.js';
 import { senderPhoneJid, senderLidJid } from './whatsappIdentity.js';
 import { handlePendingBirthdayInvitation } from './pendingBirthdayInvitation.js';
 import { getAudioMessage, transcribeVoiceMessage } from './voiceMessages.js';
@@ -827,7 +829,8 @@ async function connectSession(clientName) {
                   return;
                 }
               }
-              const state = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
+              const savedState = aiStates.get(key) || await getBotFlowState(session.id, canonicalConversationJid, 'ai_conversation');
+              const state = applyResponseModeRevision(savedState, session.businessSettings.aiModeRevision);
               if (useLegacyFallback(state)) {
                 const fallbackState = { ...state, updatedAt: Date.now() };
                 aiStates.set(key, fallbackState);
@@ -879,6 +882,7 @@ async function connectSession(clientName) {
               });
               if (output.fallback) {
                 output.state = activateLegacyFallback(output.state);
+                output.state.fallbackReason = output.fallbackReason || 'provider_failure';
                 aiStates.set(key, output.state);
                 await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
                 logger.warn({ clientId: session.id }, 'Activado flujo sin IA por indisponibilidad del modelo');
@@ -1529,8 +1533,8 @@ app.get('/clients', async (_req, res) => {
 
 app.get('/businesses', adminAuth, async (_req, res) => {
   if (isDatabaseEnabled()) {
-    const businesses = await listBusinessProfiles();
-    return res.json(businesses.map(business => ({ ...business, aiActive: aiEnabled(business.settings), aiAvailable: Boolean(process.env.GEMINI_API_KEY) })));
+    const [businesses, statuses] = await Promise.all([listBusinessProfiles(), listAiFallbackStatus()]);
+    return res.json(businesses.map(business => ({ ...business, aiActive: aiEnabled(business.settings), aiAvailable: Boolean(process.env.GEMINI_API_KEY), aiFallback: statuses.find(status => status.businessId === business.id) || { chats: 0, reasons: [] } })));
   }
 
   return res.json([
@@ -1584,8 +1588,10 @@ app.post('/businesses', adminAuth, async (req, res) => {
   }
   if (typeof req.body.settings?.aiEnabled === 'boolean') {
     settings.aiEnabled = req.body.settings.aiEnabled;
+    settings.aiModeRevision = settings.aiEnabled ? randomUUID() : existingBusiness?.settings?.aiModeRevision;
   } else if (typeof existingBusiness?.settings?.aiEnabled === 'boolean') {
     settings.aiEnabled = existingBusiness.settings.aiEnabled;
+    settings.aiModeRevision = existingBusiness.settings.aiModeRevision;
   }
   if (settings.aiEnabled === true && !process.env.GEMINI_API_KEY) {
     return res.status(400).json({ error: 'Falta configurar la clave de Gemini en el servidor para habilitar respuestas con IA.' });

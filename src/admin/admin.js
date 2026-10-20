@@ -278,6 +278,10 @@ function populateBusinessForm(businessId = '') {
   els.businessResponseModeHelp.textContent = business.aiAvailable
     ? 'Guardá los cambios para aplicar el modo a los WhatsApp de este negocio, sin reiniciar el bot.'
     : 'Para usar IA falta configurar la clave de Gemini en el servidor. Los mensajes automáticos siguen disponibles.';
+  if (business.aiActive && business.aiFallback?.chats > 0) {
+    const reasons = business.aiFallback.reasons.map(reason => reason === 'quota' ? 'límite de consultas alcanzado' : reason === 'sin detalle' ? 'fallo anterior sin detalle registrado' : reason).join(', ');
+    els.businessResponseModeHelp.textContent = `IA seleccionada, con respaldo automático en ${business.aiFallback.chats} conversación(es). Motivo: ${reasons}. Guardá IA nuevamente para reintentar; si persiste el error, el respaldo vuelve a activarse.`;
+  }
   els.businessRegistrationInput.checked = flows.includes('registro');
   els.businessAdminAgendaInput.checked = flows.includes('admin_agenda');
   els.businessApiUrlInput.value = business.apiUrl || '';

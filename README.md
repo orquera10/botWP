@@ -406,6 +406,14 @@ La preferencia guardada en el panel tiene prioridad sobre
 preferencia guardada. Para desactivar la IA de un negocio configurado desde el
 panel, seleccionar mensajes automáticos y guardar.
 
+Si Gemini falla, el respaldo automático puede seguir activo por conversación
+hasta 30 minutos sin actividad aunque IA esté seleccionada. El editor del negocio
+muestra cuántas conversaciones están en respaldo y el motivo registrado. Volver a
+guardar IA permite reintentar en el próximo mensaje, preservando los datos del
+chat y las solicitudes de pago; no reinicia las cuotas. Si el proveedor sigue
+fallando, vuelve a activarse el respaldo. Cada servidor necesita su propia clave
+y configuración; seleccionar IA no depende de lo configurado en otro servidor.
+
 ## Registro por nombre y chat de WhatsApp
 
 Los chats con IA y con menú identifican al cliente por el chat real de WhatsApp,

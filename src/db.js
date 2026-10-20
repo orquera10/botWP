@@ -333,6 +333,23 @@ export async function getBusinessProfile(businessId) {
   return result.rows[0] || null;
 }
 
+export async function listAiFallbackStatus() {
+  if (!pool) return [];
+  const result = await pool.query(`
+    select c.business_id as "businessId", count(*)::int as chats,
+      array_agg(distinct coalesce(f.state->>'fallbackReason', 'sin detalle')) as reasons
+    from bot_flow_states f
+    join clients c on c.id = f.client_id
+    join business_profiles b on b.id = c.business_id
+    where f.flow_name = 'ai_conversation'
+      and f.state->>'fallbackMode' = 'true'
+      and f.updated_at > now() - interval '30 minutes'
+      and (f.state->>'responseModeRevision') is not distinct from (b.settings->>'aiModeRevision')
+    group by c.business_id
+  `);
+  return result.rows;
+}
+
 export async function saveBusinessProfile(profile) {
   if (!pool) return null;
 

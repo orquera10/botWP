@@ -66,6 +66,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const fresh = state?.updatedAt && now - state.updatedAt < 30 * 60_000;
   const previous = fresh ? state : {};
   const next = { ...previous, history: [...(previous.history || [])], updatedAt: now };
+  if (businessSettings.aiModeRevision) next.responseModeRevision = businessSettings.aiModeRevision;
   if (next.checkout) next.checkout = { ...next.checkout };
   const acceptedAlternative = next.alternativeOffer && !next.pending && isAcceptance(text);
   const selectedAlternative = acceptedAlternative ? { ...next.alternativeOffer } : null;
@@ -223,7 +224,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     next.offTopic = 0;
     return result([question]);
   }
-  if (next.quota.calls >= limit) return { ...result([]), fallback: true };
+  if (next.quota.calls >= limit) return { ...result([]), fallback: true, fallbackReason: 'quota' };
   if ((next.offTopic || 0) >= 3 && !/cancha|reserv|turno|precio|horario|cumple|seña|sena|ubicaci|disponib/i.test(text)) return result([redirect]);
 
   // Payment webhooks send WhatsApp notifications outside Gemini's history.
@@ -301,6 +302,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
   let direct;
   let media;
   let live;
+  let fallbackReason = 'provider_failure';
   try {
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     if (isLiveModel(model)) live = liveTransportFactory({ model, apiKey: process.env.GEMINI_API_KEY });
@@ -501,10 +503,11 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
   } catch (error) {
     // Record only known failure categories, never upstream bodies or credentials.
     const category = String(error.message || '').match(/timeout|empty response|empty transcript|connection error|closed \(\d+\)|HTTP \d+|RESOURCE_EXHAUSTED|UNAVAILABLE/i)?.[0] || 'provider_failure';
+    fallbackReason = /quota|RESOURCE_EXHAUSTED|HTTP 429/i.test(String(error.message || '')) ? 'quota' : category;
     onDiagnostic({ event: 'provider_error', category });
   }
   finally { live?.close(); }
-  return { ...result(['No pude completar la consulta ahora. Probá de nuevo en un momento o contactá al negocio.']), fallback: true };
+  return { ...result(['No pude completar la consulta ahora. Probá de nuevo en un momento o contactá al negocio.']), fallback: true, fallbackReason };
 }
 
 const queues = new Map();

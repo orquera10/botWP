@@ -158,3 +158,62 @@ test('requested hour when available confirms availability for that specific hour
   assert.match(output.replies[0], /15:00 tenemos disponible/);
 });
 
+test('follow-up hour proposals in active turno inquiry keep needing court selection and check all courts', async () => {
+  const history = [
+    { role: 'user', parts: [{ text: 'hola tenes turno para mñn a las 18:30' }] },
+    { role: 'model', parts: [{ text: 'A las 18:30 está ocupado en todas las canchas. Tenemos de 12:00 a 17:00. ¿Te sirve alguno o cuántos van a jugar?' }] }
+  ];
+
+  assert.equal(needsCourtSelection('A las 16.30', history), true);
+  assert.equal(needsCourtSelection('16?', history), true);
+  assert.equal(needsCourtSelection('a las 15:00', history), true);
+  assert.equal(needsCourtSelection('Yo quiero para hoy', history), true);
+
+  // But once court or player count is supplied, court selection is resolved:
+  assert.equal(needsCourtSelection('somos 10', history), false);
+  assert.equal(needsCourtSelection('quiero fútbol 5', history), false);
+
+  // A negation of promo court does not count as selecting Cancha Promo:
+  assert.equal(needsCourtSelection('Yo no quiero cancha promo', history), true);
+
+  // Verify conversation execution with "A las 16.30":
+  let promptText = '';
+  const output = await handleAiConversation({
+    text: 'A las 16.30',
+    now: Date.UTC(2026, 9, 21, 11),
+    state: {
+      updatedAt: Date.UTC(2026, 9, 21, 11),
+      requestedDate: '2026-10-22',
+      history
+    },
+    reservasApi: {
+      listarCanchas: async () => [
+        { id: 5, nombre: 'Fútbol 5' },
+        { id: 6, nombre: 'Fútbol 6' },
+        { id: 7, nombre: 'Fútbol 7/8' },
+        { id: 11, nombre: 'Cancha Promo' }
+      ],
+      consultarDisponibilidad: async ({ fecha, cancha }) => {
+        // Fútbol 5 has 16:30 free
+        if (cancha === 5) return [{ fecha, inicio: '16:30', fin: '17:30' }];
+        return [];
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      promptText = JSON.parse(options.body).systemInstruction.parts[0].text;
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { role: 'model', parts: [{ text: 'Para mañana a las 16:30 hay disponibilidad en Fútbol 5. ¿Cuántos van a jugar?' }] } }]
+        })
+      };
+    }
+  });
+
+  assert.equal(output.state.dayOptions.hora_solicitada, '16:30');
+  assert.equal(output.state.dayOptions.hora_disponible, true);
+  assert.match(promptText, /16:30.*hay lugar in|16:30.*Fútbol 5/);
+  assert.doesNotMatch(output.replies[0], /Cancha Promo/);
+});
+
+

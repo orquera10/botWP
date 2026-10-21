@@ -446,7 +446,7 @@ function faqAnswer(text) {
     return 'La seña es totalmente reembolsable únicamente hasta 72 horas antes del evento.';
   }
 
-  if (/\b(wifi|estacionamiento|vestuario|vestuarios|ducha|duchas|mascota|mascotas|decoracion|decorar|torta|comida|mesas|sillas|musica|parlante|parlantes|aire acondicionado|calefaccion)\b/.test(normalized)) {
+  if (/\b(wifi|estacionamiento|vestuario|vestuarios|ducha|duchas|mascota|mascotas|decoracion|decorar|torta|comida|mesas|sillas|musica|parlante|parlantes|aire acondicionado|calefaccion|payaso|payasos|animador|animadores|animacion|mago|magos|show|shows|titere|titeres)\b/.test(normalized)) {
     return SPECIFIC_QUESTIONS_MESSAGE;
   }
 

@@ -139,6 +139,23 @@ test('responde que los peloteros no estan permitidos y conserva la reserva', asy
   assert.match(result.replies[0], /¿A qué hora querés comenzar\?/i);
 });
 
+test('responde con enlace de consultas específicas al preguntar por payasos o animadores', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    state: {
+      step: 'ask_start_time',
+      data: { fecha: todayIsoInBusinessTimeZone() },
+      updatedAt: new Date().toISOString()
+    },
+    text: '¿Se puede llevar un payaso?',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'ask_start_time');
+  assert.match(result.replies[0], /https:\/\/wa.me\/5493886002759/);
+  assert.match(result.replies[0], /¿A qué hora querés comenzar\?/i);
+});
+
 test('responde por las pecheras y repite la pregunta pendiente', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

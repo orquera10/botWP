@@ -44,6 +44,17 @@ test('missing amount does not divert to availability before giving the specific-
   assert.doesNotMatch(output.replies[0], /disponibilidad/);
 });
 
+test('asking to bring payasos or animadores does not invent permission and delivers specific contact WhatsApp', async () => {
+  const output = await handleAiConversation({
+    ...base,
+    text: 'te consulto para lo q es cumpleaños se puede llevar un payaso para los chicos?',
+    fetchImpl: fakeGemini([reply('¡Hola! Sí, podés traer un payaso para animar el cumple, no hay problema con eso.')])
+  });
+  assert.match(output.replies[0], /no está especificado en el reglamento de cumpleaños/i);
+  assert.match(output.replies[0], /https:\/\/wa.me\/5493886002759/);
+  assert.doesNotMatch(output.replies[0], /no hay problema|podés traer/i);
+});
+
 test('device suffix is excluded from customer lookup and registration identity', async () => {
   const canonicalJid = '5493881234567:26@s.whatsapp.net';
   const lookup = await handleAiConversation({ ...base, canonicalJid, text: 'hola', reservasApi: { consultarCliente: async ({ telefono }) => { assert.equal(telefono, '5493881234567'); return { exists: false }; } }, fetchImpl: fakeGemini([call('preparar_registro', { nombre: 'Ana', email: 'ana@example.com' })]) });

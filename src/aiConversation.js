@@ -63,7 +63,7 @@ const redirect = 'Te puedo ayudar con las canchas, horarios, precios y reservas 
 let globalQuota = { start: 0, calls: 0 };
 
 // The caller serializes messages per conversation, including reservation writes.
-export async function handleAiConversation({ state, text, canonicalJid, reservasApi: api, businessName, businessSettings = {}, registrationAvailable = true, onBeforeWrite = async () => {}, onDiagnostic = () => {}, fetchImpl = fetch, liveTransportFactory = createGeminiLiveTransport, retryDelay = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now() }) {
+export async function handleAiConversation({ state, text, canonicalJid, reservasApi: api, businessName, businessSettings = {}, registrationAvailable = true, onBeforeWrite = async () => {}, onDiagnostic = () => {}, onProgress = async () => {}, fetchImpl = fetch, liveTransportFactory = createGeminiLiveTransport, retryDelay = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now() }) {
   const fresh = state?.updatedAt && now - state.updatedAt < 30 * 60_000;
   const previous = fresh ? state : {};
   const next = { ...previous, history: [...(previous.history || [])], updatedAt: now };
@@ -363,8 +363,9 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
         globalQuota.calls++;
         next.quota.calls++;
         try {
+          const timeoutMs = Math.min(requestTimeoutMs, 20_000);
           const response = await (live?.request || fetchImpl)(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(requestTimeoutMs),
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(timeoutMs),
             body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: [{ functionDeclarations: tools }], generationConfig: { maxOutputTokens: 1200, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } } })
           });
           if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
@@ -377,6 +378,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
           const transient = /HTTP (500|502|503|504)\b|timeout|timed out|empty (response|text|transcript)|connection (error|closed)|fetch failed|ECONNRESET|UNAVAILABLE|INTERNAL|invalid response|incomplete response|tool call cancelled/i.test(String(error.message || ''));
           if (!transient || attempt === 2) throw error;
           onDiagnostic({ event: 'provider_retry', attempt: attempt + 1 });
+          try { await onProgress('Dame un momento, por favor...'); } catch {}
           live?.close();
           await retryDelay(500 * (attempt + 1));
           if (isLiveModel(model)) live = liveTransportFactory({ model, apiKey: process.env.GEMINI_API_KEY });

@@ -869,43 +869,82 @@ async function connectSession(clientName) {
                   await sendFlowOutput(session, payload.from, invitationOutput);
                   return;
                 }
-                const output = await handleAiConversation({
-                  state, text: currentText, canonicalJid: canonicalConversationJid,
-                  reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
-                  registrationAvailable: session.businessFlows.includes('registro'),
-                  onDiagnostic: diagnostic => logger.warn({ clientId: session.id, businessId: session.businessId, ...diagnostic }, 'Consulta IA no completada'),
-                  onBeforeWrite: async consumedState => {
-                    aiStates.set(key, consumedState);
-                    await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);
+                let waitNoticeSent = false;
+                const sendWaitNotice = async (msg = 'Dame un momento, por favor...') => {
+                  if (waitNoticeSent) return;
+                  waitNoticeSent = true;
+                  try {
+                    await sendTypingIndicator(session, payload.from);
+                    await sendBotText(session, payload.from, msg);
+                    await sendTypingIndicator(session, payload.from);
+                  } catch (e) {
+                    logger.warn({ clientId: session.id, err: e }, 'No se pudo enviar aviso de espera');
                   }
-                });
+                };
+
+                const waitTimer = setTimeout(() => {
+                  sendWaitNotice();
+                }, 4500);
+
+                let output;
+                try {
+                  output = await handleAiConversation({
+                    state, text: currentText, canonicalJid: canonicalConversationJid,
+                    reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
+                    registrationAvailable: session.businessFlows.includes('registro'),
+                    onDiagnostic: diagnostic => logger.warn({ clientId: session.id, businessId: session.businessId, ...diagnostic }, 'Consulta IA no completada'),
+                    onProgress: sendWaitNotice,
+                    onBeforeWrite: async consumedState => {
+                      aiStates.set(key, consumedState);
+                      await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);
+                    }
+                  });
+
+                  let bgRetries = 0;
+                  while (output?.fallback && output.fallbackReason !== 'quota' && bgRetries < 2) {
+                    bgRetries++;
+                    await sendWaitNotice();
+                    logger.warn({ clientId: session.id, attempt: bgRetries }, 'Reintentando turno IA en segundo plano');
+                    await new Promise(r => setTimeout(r, 1500 * bgRetries));
+                    output = await handleAiConversation({
+                      state: output.state || state, text: currentText, canonicalJid: canonicalConversationJid,
+                      reservasApi, businessName: session.businessName, businessSettings: session.businessSettings,
+                      registrationAvailable: session.businessFlows.includes('registro'),
+                      onDiagnostic: diagnostic => logger.warn({ clientId: session.id, businessId: session.businessId, ...diagnostic }, 'Reintento consulta IA'),
+                      onProgress: sendWaitNotice,
+                      onBeforeWrite: async consumedState => {
+                        aiStates.set(key, consumedState);
+                        await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', consumedState);
+                      }
+                    });
+                  }
+                } finally {
+                  clearTimeout(waitTimer);
+                }
+
                 if (output.fallback) {
-                  output.state = activateLegacyFallback(output.state);
-                  output.state.fallbackReason = output.fallbackReason || 'provider_failure';
-                  aiStates.set(key, output.state);
-                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
-                  logger.warn({ clientId: session.id }, 'Activado flujo sin IA por indisponibilidad del modelo');
+                  const fallbackState = { ...(output.state || state), pending: undefined };
+                  delete fallbackState.fallbackMode;
+                  delete fallbackState.fallbackReason;
+                  fallbackState.updatedAt = Date.now();
+                  aiStates.set(key, fallbackState);
+                  await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', fallbackState);
+                  logger.warn({ clientId: session.id, reason: output.fallbackReason }, 'Fallo en consulta IA mantenido en modo conversacional');
+
                   if (hasPendingCheckout(output.state)) {
                     const payment = await handleAiConversation({ state: output.state, text: 'estado pago', canonicalJid: canonicalConversationJid, reservasApi, businessSettings: session.businessSettings });
                     aiStates.set(key, payment.state);
                     await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', payment.state);
                     await sendFlowOutput(session, payload.from, payment);
                   } else {
-                    if (!savedState?.fallbackMode || savedState.responseModeRevision !== state?.responseModeRevision) {
-                      await clearBotFlowState(session.id, canonicalConversationJid, 'reservation');
-                      await clearBotFlowState(session.id, canonicalConversationJid, 'registration');
-                    }
-                    await sendBotText(session, payload.from, 'Seguimos con las opciones del menú 😊');
-                    const legacyOutput = await runLegacyFlows();
-                    output.state.history = [...(output.state.history || []),
-                      { role: 'user', parts: [{ text: currentText }] },
-                      { role: 'model', parts: [{ text: (legacyOutput?.replies || []).join('\n') }] }
-                    ].slice(-12);
-                    aiStates.set(key, output.state);
-                    await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
+                    const fallbackMsg = output.fallbackReason === 'quota'
+                      ? 'Llegamos al límite de consultas por esta hora. Podés escribirnos en unos minutos o contactar al negocio.'
+                      : (output.replies?.[0] || 'Dame unos minutitos, por favor, que se demoró la consulta con el sistema. Ya te confirmo.');
+                    await sendBotText(session, payload.from, fallbackMsg);
                   }
                   return;
                 }
+
                 aiStates.set(key, output.state);
                 await saveBotFlowState(session.id, canonicalConversationJid, 'ai_conversation', output.state);
                 await sendFlowOutput(session, payload.from, output);

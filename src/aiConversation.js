@@ -80,19 +80,23 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     next.requestedHour = next.alternativeOffer.hora_inicio;
     delete next.alternativeOffer;
   }
-  const requestedHour = normalize(text).match(/\b(?:a las|para las|de)\s+(\d{1,2})(?::(\d{2}))?\b/);
+  const requestedHour = normalize(text).match(/\b(?:(?:a las|para las|a la|para la|de)\s+(\d{1,2})(?:[:.](\d{2}))?|(\d{1,2})[:.](\d{2}))\b/);
   const wantsOtherHours = /\b(otro horario|otros horarios|otra hora|otras horas|mas temprano|mas tarde)\b/.test(normalize(text));
-  const allowsOtherDates = /\b(otro dia|otros dias|otra fecha|otras fechas|proximo dia)\b/.test(normalize(text));
+  const allowsOtherDates = /\b(otro[s]? dia[s]?|otra[s]? fecha[s]?|proximo[s]? dia[s]?|proxima[s]? fecha[s]?|proximo[s]? turno[s]?|q(?:ue)? dia[s]?|q(?:ue)? fecha[s]?|cuando (?:tenes|tienen|hay|seria|esta|quedan?))\b/.test(normalize(text));
   if (wantsOtherHours && !requestedHour) { delete next.requestedHour; delete next.alternativeOffer; }
-  if (requestedHour && Number(requestedHour[1]) < 24 && Number(requestedHour[2] || 0) < 60) {
-    let hour = Number(requestedHour[1]);
-    const suffix = normalize(text).slice(requestedHour.index + requestedHour[0].length);
-    if (/^\s*(?:de la|por la)\s+(?:tarde|noche)\b/.test(suffix) && hour < 12) hour += 12;
-    if (/^\s*(?:de la|por la)\s+(?:manana|madrugada)\b/.test(suffix) && hour === 12) hour = 0;
-    next.requestedHour = `${String(hour).padStart(2, '0')}:${requestedHour[2] || '00'}`;
-    delete next.alternativeOffer;
+  if (requestedHour) {
+    const rawH = requestedHour[1] ?? requestedHour[3];
+    const rawM = requestedHour[2] ?? requestedHour[4] ?? '00';
+    if (Number(rawH) < 24 && Number(rawM) < 60) {
+      let hour = Number(rawH);
+      const suffix = normalize(text).slice(requestedHour.index + requestedHour[0].length);
+      if (/^\s*(?:de la|por la)\s+(?:tarde|noche)\b/.test(suffix) && hour < 12) hour += 12;
+      if (/^\s*(?:de la|por la)\s+(?:manana|madrugada)\b/.test(suffix) && hour === 12) hour = 0;
+      next.requestedHour = `${String(hour).padStart(2, '0')}:${rawM}`;
+      delete next.alternativeOffer;
+    }
   }
-  const range = normalize(text).match(/\bde\s+(\d{1,2})(?::(\d{2}))?\s+a\s+(\d{1,2})(?::(\d{2}))?\b/);
+  const range = normalize(text).match(/\bde\s+(\d{1,2})(?:[:.](\d{2}))?\s+a\s+(\d{1,2})(?:[:.](\d{2}))?\b/);
   let requestedDuration;
   if (range && [range[1], range[3]].every(h => Number(h) < 24) && [range[2] || 0, range[4] || 0].every(m => Number(m) < 60)) {
     const minutes = (Number(range[3]) * 60 + Number(range[4] || 0) - Number(range[1]) * 60 - Number(range[2] || 0) + 1440) % 1440;
@@ -304,7 +308,7 @@ ${weekdayOnly ? 'El cliente indicó un día de la semana sin elegir hora. Consul
 Hora solicitada: ${next.requestedHour || 'sin hora guardada'}. Si ese horario está ocupado, priorizá otra cancha compatible el MISMO día y a la MISMA hora; después otros horarios reales de ese día. Solo busques otras fechas cuando el cliente lo pida o acepte cambiar de día. Alternativa ofrecida: ${JSON.stringify(next.alternativeOffer || null)}. ${acceptedAlternative ? 'El cliente acaba de aceptar la alternativa ofrecida: ejecutá preparar_reserva con su cancha, fecha, hora y duración para mostrar resumen y términos.' : 'Una alternativa no cambia la cancha ni la fecha elegidas hasta que el cliente la acepte.'}
 Nunca afirmes disponibilidad ni precios sin consultar disponibilidad en este mensaje. Si pide un rango como “de 17 a 19”, verificá las DOS horas completas con duracion=2; una consulta previa de una hora no prueba que el bloque esté libre. Si aún no dio hora, preguntala o consultá horarios; no elijas horarios de ejemplo arbitrarios. Si mostrás solo parte de los horarios reales, aclaralo como “entre otros”, sin dar a entender que son los únicos.
 Redactá vos las respuestas de disponibilidad a partir de los datos verificados de la herramienta. Usá sus franjas continuas, fecha legible, turno exacto y alternativa comprobada sin alterar importes, duración ni fechas. No copies una estructura fija en cada respuesta: respondé a lo último que dijo, evitá repetir cancha y fecha si ya están claras y hacé solo la pregunta necesaria. Si ya eligió un turno para reservar, ejecutá preparar_reserva para mostrar resumen y términos; no vuelvas a preguntarle si quiere verlos. Si pidió solo disponibilidad, respondé breve. Una alternativa consultada es una propuesta: no la reserves ni cambies el día hasta que el cliente la elija. Nunca inventes una franja uniendo huecos ocupados.
-Las franjas corresponden SOLO a la cancha y duración consultadas; nunca afirmes que todas las canchas están libres en esa franja. Mostrá los huecos ocupados como franjas separadas. Si pide “otro horario para mañana”, ofrecé únicamente franjas verificadas de mañana, sin volver a insistir con otra fecha. Si hay alternativa en otra cancha, explicá brevemente el cambio de cancha y su propio precio, por ejemplo “En Fútbol 5 está ocupado, pero en Fútbol 6 hay de 15 a 16. ¿Te sirve?”. Nunca uses el precio de una cancha para otra.
+Las franjas corresponden SOLO a la cancha y duración consultadas; nunca afirmes que todas las canchas están libres en esa franja. Mostrá los huecos ocupados como franjas separadas. Si pide “otro horario para mañana”, ofrecé únicamente franjas verificadas de mañana, sin volver a insistir con otra fecha. Si hay alternativa en otra cancha, explicá brevemente el cambio de cancha y su propio precio, por ejemplo “En Fútbol 5 está ocupado, pero en Fútbol 6 hay de 15 a 16. ¿Te sirve?”. Si hay alternativa en otra fecha (porque el cliente consultó por el próximo turno/día disponible o qué día hay libre a cierta hora), informá directamente el próximo día y horario libre encontrado según el campo alternativa (por ejemplo: “Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:00 a 19:00. ¿Te sirve?”). Nunca uses el precio de una cancha para otra.
 Precios por horario: cuando pregunten por precios, descuentos, promociones o franjas más baratas, respondé esa consulta aunque todavía falte elegir cancha. En ese caso usá las tarifas verificadas de opciones_del_día si están presentes en el contexto; la regla de no mostrar horarios ni precios antes de elegir cancha tiene esta excepción. Si ya hay una cancha definida, consultá disponibilidad para el día y la cancha y usá sus tarifas verificadas. El precio del catálogo es BASE, no la tarifa garantizada de todo el día. Si falta fecha, preguntá para qué día, sin decir que no hay promociones. Diferenciá brevemente las franjas por precio, por ejemplo “De 13 a 16 sale $X la hora; de 16 a 20, $Y”, SOLO con datos reales. Para más de una hora informá el total por la duración consultada; no multipliques nuevamente ni inventes un precio uniforme por hora. Las franjas tarifarias de bloques de varias horas pueden superponerse: cada tarifa vale únicamente para sus inicios_disponibles. Ahorro positivo contra total_base indica descuento; una tarifa superior a la base no es promo. Si la tarifa no está informada, no la inventes. Aunque no pregunten precios, si mostrás una cancha con varias tarifas y la cancha ya está definida, mencioná brevemente sus diferencias en lugar de dar un único precio para toda la franja.
 No ofrezcas canchas sin turnos disponibles en la fecha consultada. La Cancha Promo se ofrece únicamente si disponibilidad devuelve turnos reales para ella; que exista en el catálogo no demuestra que esté disponible. Lo mismo aplica a cumpleaños y todas las canchas. Las opciones verificadas excluyen las que no tienen horarios: no agregues otras desde el catálogo ni desde el historial. Una consulta fallida no confirma disponibilidad. Si el cliente pregunta específicamente por una cancha sin turnos, explicá que no hay para ese día y ofrecé únicamente alternativas comprobadas.
 “Cancha con promoción”, “alguna cancha con promo”, “tenés promociones” o “horarios más baratos” significan descuentos por franja, NO la cancha cuyo nombre es “Cancha Promo”. Solo interpretá ese nombre cuando diga explícitamente “Cancha Promo”. No selecciones esa cancha por la palabra promoción. ${discountDaysQuery ? `El cliente pregunta QUÉ DÍAS hay descuentos, o pide otro día en contexto de promociones. Ya se buscó por varios días: ${JSON.stringify(next.discountDays)}. Respondé con las dos o tres opciones más cercanas, mencionando día, cancha, franja y precio. NO pidas una fecha ni digas que no podés buscar día por día. El estado de fecha elegida anterior no limita esta búsqueda; no cambies la reserva ni el día elegido por mostrar opciones. Si no hay resultados, decí que no encontraste descuentos con turnos libres en los días revisados, sin afirmar que nunca hay descuentos. Si hubo consultas fallidas, no afirmes que la búsqueda fue completa. No prepares reservas hasta que elija una opción.` : discountQuery ? `En este mensaje busca descuentos generales. Ya se verificaron las opciones del día. Franjas disponibles con ahorro comprobado: ${JSON.stringify(discountOptions)}. Respondé primero con una o dos opciones de descuento y sus horarios y precios, de forma breve, sin pedir jugadores antes de contestar. Si la lista está vacía y no hubo consultas fallidas, indicá que no encontraste descuentos para ese día; si hubo consultas fallidas, aclaralo brevemente sin afirmar que no existen. No confundas un precio base bajo con un descuento. No prepares reservas hasta que elija cancha y horario.` : ''}
@@ -426,7 +430,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               const hour = a.hora_inicio || next.requestedHour;
               const court = canchas.find(c => c.id === a.cancha);
               const slotsForDay = value;
-              const exact = hour ? value.find(slot => slot.fecha === a.fecha && slot.inicio === hour) : null;
+              const exact = hour ? value.find(slot => slot.fecha === a.fecha && slotMatchesHour(slot, hour)) : null;
               value = { ...next.availability, disponible: slotsForDay.length > 0, fecha_legible: friendlyDate(a.fecha), slots: slotsForDay, franjas: availabilityRanges(slotsForDay, a.duracion, !court?.duracion_fija), tarifas: pricedAvailabilityRanges(slotsForDay, a.duracion, !court?.duracion_fija), hora_solicitada: hour || null, turno_solicitado: exact ? { ...exact, horario_legible: friendlyRange(exact.inicio, a.duracion, exact.fin) } : null, alternativa: null };
               if (hour && /^\d{2}:\d{2}$/.test(hour) && !exact) {
                 delete next.alternativeOffer;
@@ -435,9 +439,9 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
                 for (const other of alternatives) {
                   let slots;
                   try { slots = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: other.id, duracion: a.duracion }); } catch { continue; }
-                  const slot = slots.find(s => s.fecha === a.fecha && s.inicio === hour);
+                  const slot = slots.find(s => s.fecha === a.fecha && slotMatchesHour(s, hour));
                   if (!slot) continue;
-                  next.alternativeOffer = { fecha: a.fecha, cancha: other.id, nombre: other.nombre, duracion: a.duracion, hora_inicio: hour };
+                  next.alternativeOffer = { fecha: a.fecha, cancha: other.id, nombre: other.nombre, duracion: a.duracion, hora_inicio: slot.inicio };
                   value.alternativa = { ...next.alternativeOffer, slot, fecha_legible: friendlyDate(a.fecha), horario_legible: friendlyRange(slot.inicio, a.duracion, slot.fin) };
                   break;
                 }
@@ -449,9 +453,9 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
                   let slots;
                   try { slots = await api.consultarDisponibilidad({ fecha, cancha: a.cancha, duracion: a.duracion }); }
                   catch { break; }
-                  const alternative = slots.find(slot => slot.fecha === fecha && slot.inicio === hour);
+                  const alternative = slots.find(slot => slot.fecha === fecha && slotMatchesHour(slot, hour));
                   if (!alternative) continue;
-                  next.alternativeOffer = { ...next.availability, fecha, hora_inicio: hour };
+                  next.alternativeOffer = { ...next.availability, fecha, hora_inicio: alternative.inicio };
                   value.alternativa = { ...next.alternativeOffer, slot: alternative, fecha_legible: friendlyDate(fecha), horario_legible: friendlyRange(alternative.inicio, a.duracion, alternative.fin) };
                   break;
                 }
@@ -509,7 +513,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               const cancha = canchas.find(c => c.id === a.cancha);
               if (!cancha || (cancha.duracion_fija && cancha.duracion_fija !== a.duracion)) throw new Error('Cancha o duración no válida');
               const slots = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: a.cancha, duracion: a.duracion });
-              const slot = slots.find(s => s.fecha === a.fecha && s.inicio === a.hora_inicio);
+              const slot = slots.find(s => s.fecha === a.fecha && (s.inicio === a.hora_inicio || slotMatchesHour(s, a.hora_inicio)));
               if (!slot) throw new Error('Ese horario no está disponible');
               next.pending = { fecha: slot.fecha, hora_inicio: slot.inicio, cancha: a.cancha, canchaNombre: cancha.nombre, duracion: a.duracion, cliente: { nombre: a.nombre.trim(), email: a.email.trim() } };
               next.offTopic = 0;

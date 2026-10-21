@@ -303,6 +303,42 @@ test('an occupied birthday hour proactively offers the nearest day and only sele
   assert.match(accepted.replies[0], /condiciones se envían al acreditarse/);
 });
 
+test('asking next available day for 18.30 matches overlapping 18:00 slot on upcoming Saturday', async () => {
+  const dates = [];
+  const api = {
+    listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 7/8' }],
+    consultarDisponibilidad: async ({ fecha }) => {
+      dates.push(fecha);
+      if (fecha === '2026-10-24') {
+        return [{ fecha, inicio: '18:00', fin: '19:00', total: 500, minimo_senia: 150 }];
+      }
+      return [{ fecha, inicio: '21:00', fin: '22:00', total: 500, minimo_senia: 150 }];
+    },
+    listarTerminos: async () => ['Condiciones de Fútbol 7'],
+    crearReserva: () => assert.fail('Offering an alternative cannot create a reservation')
+  };
+  const state = { updatedAt: now, requestedDate: '2026-10-22', requestedHour: '18:30', availability: { fecha: '2026-10-22', cancha: 1, duracion: 1 } };
+  const requests = [];
+  const offered = await handleAiConversation({
+    ...base,
+    text: 'pero cuando seria el proximo dia q tenes libre a las 18.30',
+    state,
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('disponibilidad', { fecha: '2026-10-22', cancha: 1, duracion: 1, hora_inicio: '18:30' }),
+      reply('Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:00 a 19:00. ¿Te sirve?')
+    ], requests)
+  });
+  assert.deepEqual(dates, ['2026-10-22', '2026-10-23', '2026-10-24']);
+  const verified = requests[1].contents.at(-1).parts[0].functionResponse.response.result;
+  assert.equal(verified.alternativa.fecha, '2026-10-24');
+  assert.equal(verified.alternativa.hora_inicio, '18:00');
+  assert.equal(verified.alternativa.horario_legible, '18 a 19');
+  assert.equal(offered.state.alternativeOffer.fecha, '2026-10-24');
+  assert.equal(offered.state.alternativeOffer.hora_inicio, '18:00');
+  assert.match(offered.replies[0], /sábado 24 de octubre/);
+});
+
 test('automatic alternative search stops after seven days', async () => {
   let queries = 0;
   const result = await handleAiConversation({ ...base, text: 'para las 17 o si no otro día', reservasApi: { listarCanchas: async () => [{ id: 1 }], consultarDisponibilidad: async () => { queries++; return []; } }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('No encontré ese horario en los próximos siete días.')]) });

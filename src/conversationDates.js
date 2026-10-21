@@ -17,8 +17,13 @@ export function slotMatchesHour(slot, targetHour) {
   const [tH, tM] = String(targetHour || '00:00').split(':').map(Number);
   const startMins = sH * 60 + sM;
   const targetMins = tH * 60 + tM;
-  let [fH, fM] = String(slot.fin || '00:00').split(':').map(Number);
-  if (fH === 0 && fM === 0 && sH > 0) fH = 24;
-  const endMins = fH * 60 + fM;
+  let endMins;
+  if (slot.fin) {
+    let [fH, fM] = String(slot.fin).split(':').map(Number);
+    if (fH === 0 && fM === 0 && sH > 0) fH = 24;
+    endMins = fH * 60 + fM;
+  } else {
+    endMins = startMins + 60;
+  }
   return targetMins >= startMins && targetMins < endMins;
 }

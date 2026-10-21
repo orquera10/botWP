@@ -884,7 +884,7 @@ async function connectSession(clientName) {
 
                 const waitTimer = setTimeout(() => {
                   sendWaitNotice();
-                }, 4500);
+                }, 9000);
 
                 let output;
                 try {

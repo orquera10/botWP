@@ -673,5 +673,44 @@ test('nocturnal slots with half-hour fraction like 20:30 to 21:30 are corrected 
   assert.match(output.replies[0], /20:00 a 21:00 o de 21:00 a 22:00/);
 });
 
+test('hasta las 17 preserves agreed start at 14:30 and calculates 2.5h duration without moving start to 12', async () => {
+  const calls = [];
+  const api = {
+    listarCanchas: async () => [{ id: 5, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async ({ fecha, cancha, duracion }) => {
+      calls.push({ fecha, cancha, duracion });
+      return [
+        { fecha, inicio: '12:00', fin: '14:30', total: 100000, minimo_senia: 50000 },
+        { fecha, inicio: '14:30', fin: '17:00', total: 100000, minimo_senia: 50000 }
+      ];
+    },
+    crearReserva: async () => ({ reserva: { ticket_id: 101, total_cancha: 100000, senia: 50000 }, mercadopago: { init_point: 'https://mp.fake/test' } })
+  };
 
+  const state = {
+    updatedAt: now,
+    requestedDate: '2026-10-22',
+    requestedHour: '14:30',
+    history: [
+      { role: 'user', parts: [{ text: 'A las 14.30 podría ser' }] },
+      { role: 'model', parts: [{ text: '¡Sí, a las 14:30 hay disponibilidad en Fútbol 5! ¿Te reservo de 14:30 a 15:30? 😊' }] }
+    ]
+  };
 
+  const output = await handleAiConversation({
+    ...base,
+    text: 'Hasta las 17 resérvame',
+    state,
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('preparar_reserva', { fecha: '2026-10-22', cancha: 5, duracion: 2.5, hora_inicio: '14:30', nombre: 'Dario', email: 'dario@test.com' })
+    ])
+  });
+
+  assert.equal(calls[0].duracion, 2.5);
+  assert.equal(output.state.pending.duracion, 2.5);
+  assert.equal(output.state.pending.hora_inicio, '14:30');
+  assert.notEqual(output.state.pending.hora_inicio, '12:00');
+  assert.match(output.replies[0], /14:30 a 17/);
+  assert.doesNotMatch(output.replies[0], /\b12 a 15\b/);
+});

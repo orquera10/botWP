@@ -100,11 +100,56 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
       delete next.alternativeOffer;
     }
   }
-  const range = normalize(text).match(/\bde\s+(\d{1,2})(?:[:.](\d{2}))?\s+a\s+(\d{1,2})(?:[:.](\d{2}))?\b/);
+  const range = normalize(text).match(/\b(?:de|desde)\s+(\d{1,2})(?:[:.](\d{2}))?\s+(?:a|hasta)\s+(?:las?\s+)?(\d{1,2})(?:[:.](\d{2}))?\b/);
   let requestedDuration;
   if (range && [range[1], range[3]].every(h => Number(h) < 24) && [range[2] || 0, range[4] || 0].every(m => Number(m) < 60)) {
-    const minutes = (Number(range[3]) * 60 + Number(range[4] || 0) - Number(range[1]) * 60 - Number(range[2] || 0) + 1440) % 1440;
-    if (minutes >= 60 && minutes <= 240 && minutes % 30 === 0) requestedDuration = minutes / 60;
+    let startH = Number(range[1]);
+    const startM = Number(range[2] || 0);
+    let endH = Number(range[3]);
+    const endM = Number(range[4] || 0);
+    if (endH < 12 && startH >= 12) endH += 12;
+    const startMins = startH * 60 + startM;
+    let endMins = endH * 60 + endM;
+    if (endMins <= startMins) endMins += 1440;
+    const minutes = endMins - startMins;
+    if (minutes >= 60 && minutes <= 240 && minutes % 30 === 0) {
+      requestedDuration = minutes / 60;
+      next.requestedHour = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
+      delete next.alternativeOffer;
+    }
+  }
+
+  const untilMatch = !range && normalize(text).match(/\b(?:(?:que\s+sea\s+)?hasta|hasta\s+las?)\s+(\d{1,2})(?:[:.](\d{2}))?\b/);
+  if (untilMatch && Number(untilMatch[1]) < 24 && Number(untilMatch[2] || 0) < 60) {
+    const knownStart = next.requestedHour || next.availability?.hora_inicio || (
+      next.history?.slice(-2).map(h => h.parts?.map(p => p.text).join(' ')).join(' ').match(/\b(?:a las|de)\s+(\d{1,2}[:.]\d{2})\b/)?.[1]
+    );
+    if (knownStart) {
+      const [sH, sM] = String(knownStart).replace('.', ':').split(':').map(Number);
+      let endH = Number(untilMatch[1]);
+      const endM = Number(untilMatch[2] || 0);
+      if (endH < 12 && sH >= 12) endH += 12;
+      const startMins = sH * 60 + sM;
+      let endMins = endH * 60 + endM;
+      if (endMins <= startMins) endMins += 1440;
+      const minutes = endMins - startMins;
+      if (minutes >= 60 && minutes <= 240 && minutes % 30 === 0) {
+        requestedDuration = minutes / 60;
+        next.requestedHour = `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')}`;
+        delete next.alternativeOffer;
+      }
+    }
+  }
+
+  if (!requestedDuration) {
+    const norm = normalize(text);
+    if (/\b(?:(?:1|una)\s*(?:y\s*media|\.5)|hora\s+y\s+media|90\s*min(?:utos)?)\b/.test(norm)) requestedDuration = 1.5;
+    else if (/\b(?:(?:2|dos)\s*(?:y\s*media|\.5)|dos\s+horas\s+y\s+media|150\s*min(?:utos)?)\b/.test(norm)) requestedDuration = 2.5;
+    else if (/\b(?:(?:3|tres)\s*(?:y\s*media|\.5)|tres\s+horas\s+y\s+media|210\s*min(?:utos)?)\b/.test(norm)) requestedDuration = 3.5;
+    else if (/\b(?:2|dos)\s+horas\b/.test(norm)) requestedDuration = 2;
+    else if (/\b(?:3|tres)\s+horas\b/.test(norm)) requestedDuration = 3;
+    else if (/\b(?:4|cuatro)\s+horas\b/.test(norm)) requestedDuration = 4;
+    else if (/\b(?:1|una)\s+hora\b/.test(norm)) requestedDuration = 1;
   }
   // Preserve explicit day changes independently of the model's shortened history.
   const explicitIso = String(text).match(/\b(\d{4}-\d{2}-\d{2})\b/);
@@ -313,7 +358,7 @@ Avanzá de a un paso, tanto en texto como en notas de voz. Si pide turno para un
 - Si no indicó ninguna hora: mencioná brevemente SOLO qué opciones tienen disponibilidad verificada ese día (incluí cumpleaños si está disponible), sin enumerar sus horarios ni precios. Después preguntá cuántos van a jugar o si es para un cumple. Por ejemplo, únicamente si los datos lo confirman: “Sí, hay Fútbol 5, 6, 7/8 y cumpleaños. ¿Cuántos van a jugar o es para un cumple?”.
 Si ya eligió cancha o informó jugadores, reutilizá ese dato y no vuelvas a preguntarlo. Si es cumpleaños no preguntes jugadores de fútbol. Una vez definida la cancha, mostrale sus franjas reales y ofrecé alternativas del mismo día cuando el horario esté ocupado. No agregues saludos largos ni explicaciones innecesarias.
 Opciones verificadas para el día: ${JSON.stringify(next.dayOptions?.fecha === next.requestedDate ? next.dayOptions : null)}. ${selectionNeeded ? (next.dayOptions?.hora_solicitada && next.dayOptions?.hora_disponible === false ? `El cliente consultó para las ${next.dayOptions.hora_solicitada}, pero a esa hora NO hay lugar en ninguna cancha (está ocupado). Informá que a las ${next.dayOptions.hora_solicitada} está ocupado, indicá las franjas libres que sí hay ese día (con formato uniforme, sin mezclar "12 a 17" con "00:00 a 02:00") y preguntá cuántos juegan o si les sirve otro horario. No consultes otra vez disponibilidad.` : next.dayOptions?.hora_solicitada && next.dayOptions?.hora_disponible === true ? `El cliente consultó para las ${next.dayOptions.hora_solicitada} y a esa hora SÍ hay lugar en: ${(next.dayOptions.opciones_con_hora || []).map(c => c.nombre).join(', ')}. Confirmá la disponibilidad a las ${next.dayOptions.hora_solicitada} y preguntá cuántos van a jugar o si es para un cumple.` : 'Falta definir actividad o cantidad de jugadores: respondé con las opciones verificadas disponibles y UNA pregunta corta. No muestres franjas, horarios ni precios todavía. No consultes otra vez disponibilidad ni prepares reservas. Si una consulta falló, no afirmes disponibilidad de esa cancha; si ninguna está verificada, preguntá qué actividad busca sin inventar disponibilidad.') : 'Continuá con la cancha elegida según jugadores o actividad y conservá los datos anteriores.'}
-Usá un tono amable y educado, sin exagerar modismos ni repetir saludos en cada mensaje. Escribí “Fútbol 5”, horarios como “20:00 a 21:00” y precios con “$”. NUNCA digas "che", “de 5”, “bancás un toque” ni prometas consultar más tarde: consultá las herramientas en este turno. “De 20 a 21” significa inicio 20:00 y duración 1 hora; “a las 20” o “21” actualizan solo el horario conservando fecha, cancha y duración ya elegidas. Si propusiste fútbol 5 y el cliente respondió con horario, continuá con esa cancha, no vuelvas a preguntar cuál.
+Usá un tono amable y educado, sin exagerar modismos ni repetir saludos en cada mensaje. Escribí “Fútbol 5”, horarios como “20:00 a 21:00” y precios con “$”. NUNCA digas "che", “de 5”, “bancás un toque” ni prometas consultar más tarde: consultá las herramientas en este turno. “De 20 a 21” o “de 14:30 a 17” define hora de inicio (14:30) y duración por diferencia (2.5 horas). “A las 20” o “14:30” actualiza solo el horario conservando fecha, cancha y duración. Si ya se acordó o propuso una hora de inicio (por ejemplo 14:30) y el cliente responde “hasta las 17”, “que sea hasta las 17” o “no, hasta las 17 resérvame”, el turno mantiene el inicio acordado (14:30) y la duración abarca hasta las 17:00 (14:30 a 17:00 = 2.5 horas, duracion=2.5); ¡PROHIBIDO mover el inicio a las 12:00 o a otro horario no solicitado! Si el cliente expresa duración (“2 horas”, “hora y media”, “2 horas y media”), usá esa duración con el inicio acordado. Si propusiste fútbol 5 y el cliente respondió con horario, continuá con esa cancha, no vuelvas a preguntar cuál.
 Horarios y turnos permitidos: hasta las 20:00 (horario diurno/vespertino, de 13:00 a 20:00) los turnos SÍ pueden solicitarse en horas no en punto fraccionadas cada 30 minutos (por ejemplo de 18:30 a 19:30 o de 18:30 a 20:00, 14:00 a 15:30) y con duraciones fraccionadas (1 hora, 1.5 horas, etc.), siempre que finalicen a las 20:00 o antes. A partir de las 20:00 (horario nocturno, de 20:00 a 02:00) los turnos se reservan ÚNICAMENTE en horas fijas en punto (por ejemplo 20 a 21, 20 a 22, 21 a 22, 22 a 23, 23 a 1, 00 a 01); no se permiten turnos nocturnos con minutos fraccionados (como 20:30 a 21:30). Si el cliente pide un turno nocturno fraccionado (ej. 20:30 a 21:30), explicá con amabilidad que a partir de las 20:00 (horario nocturno) los turnos se toman únicamente en horas fijas en punto (por ejemplo de 20:00 a 21:00 o de 21:00 a 22:00) y consultale cuál de esas opciones prefiere. El horario que le digas al cliente DEBE coincidir con el turno real del sistema consultado con disponibilidad.
 Al hablar con clientes presentá fechas como “el lunes 12 de octubre”, nunca YYYY-MM-DD. Formato de horarios uniforme: sé coherente en la forma de expresar las franjas horarias en un mismo mensaje. No mezcles estilos como "de 12 a 17 o de 00:00 a 02:00". Si usás formato en punto sin minutos, decí "de 12 a 17 o de 0 a 2 de la madrugada"; si usás formato con minutos, decí "de 12:00 a 17:00 o de 00:00 a 02:00". Mantené siempre el mismo estilo para todas las franjas. Mostrá minutos cuando hagan falta: “16:30”. Si el cliente dice “5 de la tarde”, interpretá 17:00 pero respondé “17”. Conservá YYYY-MM-DD y HH:mm en los argumentos de herramientas; los mensajes de pago mantienen fecha y horarios numéricos completos. No anuncies una franja entera libre si solo verificaste algunos turnos.
 Última consulta real de disponibilidad: ${JSON.stringify(next.availability || null)}. Conservá sus datos al interpretar respuestas breves; volvé a consultar para comprobar disponibilidad actual. Ante un error de parámetros corregí la llamada y reintentá dentro del turno, sin obligar al cliente a repetir lo ya dicho. Si buscan el próximo turno o día libre, la búsqueda parte de la fecha de hoy automáticamente. Un horario no disponible no es un error técnico; ofrecé alternativas reales.
@@ -542,7 +587,8 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               const cancha = canchas.find(c => c.id === a.cancha);
               if (!cancha || (cancha.duracion_fija && cancha.duracion_fija !== a.duracion)) throw new Error('Cancha o duración no válida');
               const slots = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: a.cancha, duracion: a.duracion });
-              const slot = slots.find(s => s.fecha === a.fecha && (s.inicio === a.hora_inicio || slotMatchesHour(s, a.hora_inicio)));
+              const targetInicio = /^\d{1,2}$/.test(String(a.hora_inicio || '')) ? `${String(a.hora_inicio).padStart(2, '0')}:00` : String(a.hora_inicio || '');
+              const slot = slots.find(s => s.fecha === a.fecha && (s.inicio === targetInicio || s.inicio === a.hora_inicio));
               if (!slot) throw new Error('Ese horario no está disponible');
               next.pending = { fecha: slot.fecha, hora_inicio: slot.inicio, cancha: a.cancha, canchaNombre: cancha.nombre, duracion: a.duracion, cliente: { nombre: a.nombre.trim(), email: a.email.trim() } };
               next.offTopic = 0;

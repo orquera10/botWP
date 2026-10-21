@@ -117,7 +117,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     const startM = Number(range[2] || 0);
     let endH = Number(range[3]);
     const endM = Number(range[4] || 0);
-    if (endH < 12 && startH >= 12) endH += 12;
+    if (endH < 12 && startH >= 12 && startH < 20) endH += 12;
     const startMins = startH * 60 + startM;
     let endMins = endH * 60 + endM;
     if (endMins <= startMins) endMins += 1440;
@@ -138,7 +138,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
       const [sH, sM] = String(knownStart).replace('.', ':').split(':').map(Number);
       let endH = Number(untilMatch[1]);
       const endM = Number(untilMatch[2] || 0);
-      if (endH < 12 && sH >= 12) endH += 12;
+      if (endH < 12 && sH >= 12 && sH < 20) endH += 12;
       const startMins = sH * 60 + sM;
       let endMins = endH * 60 + endM;
       if (endMins <= startMins) endMins += 1440;
@@ -179,7 +179,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     delete next.pending;
     delete next.allowsOtherDates;
   }
-  else if (/\b(?:hoy|manana|pasado manana)\b/.test(normalize(text))) {
+  else if (/\b(?:hoy|esta noche|esta tarde|manana|pasado manana)\b/.test(normalize(text))) {
     const offset = /\bpasado manana\b/.test(normalize(text)) ? 2 : /\bmanana\b/.test(normalize(text)) ? 1 : 0;
     const target = new Date(`${localDate}T12:00:00Z`);
     target.setUTCDate(target.getUTCDate() + offset);
@@ -374,7 +374,7 @@ Avanzá de a un paso, tanto en texto como en notas de voz. Si pide turno para un
 Si ya eligió cancha o informó jugadores, reutilizá ese dato y no vuelvas a preguntarlo. Si es cumpleaños no preguntes jugadores de fútbol. Una vez definida la cancha, mostrale sus franjas reales y ofrecé alternativas del mismo día cuando el horario esté ocupado. No agregues saludos largos ni explicaciones innecesarias.
 Opciones verificadas para el día: ${JSON.stringify(next.dayOptions?.fecha === next.requestedDate ? next.dayOptions : null)}. ${selectionNeeded ? (next.dayOptions?.hora_solicitada && next.dayOptions?.hora_disponible === false ? `El cliente consultó para las ${next.dayOptions.hora_solicitada}, pero a esa hora NO hay lugar en ninguna cancha (está ocupado). Informá que a las ${next.dayOptions.hora_solicitada} está ocupado, indicá las franjas libres que sí hay ese día (con formato uniforme, sin mezclar "12 a 17" con "00:00 a 02:00") y preguntá cuántos juegan o si les sirve otro horario. No consultes otra vez disponibilidad.` : next.dayOptions?.hora_solicitada && next.dayOptions?.hora_disponible === true ? `El cliente consultó para las ${next.dayOptions.hora_solicitada} y a esa hora SÍ hay lugar en: ${(next.dayOptions.opciones_con_hora || []).map(c => c.nombre).join(', ')}. Confirmá la disponibilidad a las ${next.dayOptions.hora_solicitada} y preguntá cuántos van a jugar o si es para un cumple.` : 'Falta definir actividad o cantidad de jugadores: respondé con las opciones verificadas disponibles y UNA pregunta corta. No muestres franjas, horarios ni precios todavía. No consultes otra vez disponibilidad ni prepares reservas. Si una consulta falló, no afirmes disponibilidad de esa cancha; si ninguna está verificada, preguntá qué actividad busca sin inventar disponibilidad.') : 'Continuá con la cancha elegida según jugadores o actividad y conservá los datos anteriores.'}
 Usá un tono amable y educado, sin exagerar modismos ni repetir saludos en cada mensaje. Escribí “Fútbol 5”, horarios como “20:00 a 21:00” y precios con “$”. NUNCA digas "che", “de 5”, “bancás un toque” ni prometas consultar más tarde: consultá las herramientas en este turno. “De 20 a 21” o “de 14:30 a 17” define hora de inicio (14:30) y duración por diferencia (2.5 horas). “A las 20” o “14:30” actualiza solo el horario conservando fecha, cancha y duración. Si ya se acordó o propuso una hora de inicio (por ejemplo 14:30) y el cliente responde “hasta las 17”, “que sea hasta las 17” o “no, hasta las 17 resérvame”, el turno mantiene el inicio acordado (14:30) y la duración abarca hasta las 17:00 (14:30 a 17:00 = 2.5 horas, duracion=2.5); ¡PROHIBIDO mover el inicio a las 12:00 o a otro horario no solicitado! Si el cliente expresa duración (“2 horas”, “hora y media”, “2 horas y media”), usá esa duración con el inicio acordado. Si el cliente confirma o corrige el horario deseado (por ejemplo "18.30 quiero" o "para las 18:30") sobre una cancha y fecha ya definidas o propuestas, ejecutá DIRECTAMENTE preparar_reserva para esa cancha, fecha y horario; TERMINANTEMENTE PROHIBIDO redactar confirmaciones de texto libre o pedir confirmación sin llamar a preparar_reserva. Si propusiste fútbol 5 y el cliente respondió con horario, continuá con esa cancha, no vuelvas a preguntar cuál.
-Horarios y turnos permitidos: hasta las 20:00 (horario diurno/vespertino, de 13:00 a 20:00) los turnos SÍ pueden solicitarse en horas no en punto fraccionadas cada 30 minutos (por ejemplo de 18:30 a 19:30 o de 18:30 a 20:00, 14:00 a 15:30) y con duraciones fraccionadas (1 hora, 1.5 horas, etc.), siempre que finalicen a las 20:00 o antes. A partir de las 20:00 (horario nocturno, de 20:00 a 02:00) los turnos se reservan ÚNICAMENTE en horas fijas en punto (por ejemplo 20 a 21, 20 a 22, 21 a 22, 22 a 23, 23 a 1, 00 a 01); no se permiten turnos nocturnos con minutos fraccionados (como 20:30 a 21:30). Si el cliente pide un turno nocturno fraccionado (ej. 20:30 a 21:30), explicá con amabilidad que a partir de las 20:00 (horario nocturno) los turnos se toman únicamente en horas fijas en punto (por ejemplo de 20:00 a 21:00 o de 21:00 a 22:00) y consultale cuál de esas opciones prefiere. El horario que le digas al cliente DEBE coincidir con el turno real del sistema consultado con disponibilidad.
+Horarios y turnos permitidos: hasta las 20:00 (horario diurno/vespertino, de 13:00 a 20:00) los turnos SÍ pueden solicitarse en horas no en punto fraccionadas cada 30 minutos (por ejemplo de 18:30 a 19:30 o de 18:30 a 20:00, 14:00 a 15:30) y con duraciones fraccionadas (1 hora, 1.5 horas, etc.), siempre que finalicen a las 20:00 o antes. A partir de las 20:00 (horario nocturno, de 20:00 a 02:00) los turnos se reservan ÚNICAMENTE en horas fijas en punto (por ejemplo 20 a 21, 20 a 22, 21 a 22, 22 a 23, 23 a 1, 00 a 01, 00 a 02); no se permiten turnos nocturnos con minutos fraccionados (como 20:30 a 21:30). Si el cliente pide un turno nocturno fraccionado (ej. 20:30 a 21:30), explicá con amabilidad que a partir de las 20:00 (horario nocturno) los turnos se toman únicamente en horas fijas en punto (por ejemplo de 20:00 a 21:00 o de 21:00 a 22:00) y consultale cuál de esas opciones prefiere. El horario que le digas al cliente DEBE coincidir con el turno real del sistema consultado con disponibilidad. Turnos de madrugada (00:00 a 02:00, 00:00 a 01:00, 01:00 a 02:00, etc.): los turnos nocturnos de madrugada devueltos por disponibilidad pertenecen a la noche del día operativo consultado (por ejemplo, si se consulta disponibilidad para hoy, los turnos a las 00:00 y 01:00 son de esta misma noche / trasnoche). PROHIBIDO decir que 'para hoy no hay turnos' si hay turnos de madrugada (00:00 a 02:00) disponibles en esa consulta; informá que hay disponibilidad de 23:00 a 02:00 de la madrugada (o de 00:00 a 02:00) de esta noche. Si el cliente elige o consulta por un turno de madrugada disponible (ej. 'de 0 a 2' o 'a las 00:00'), ejecutá DIRECTAMENTE preparar_reserva para armar el resumen con link de pago sin vueltas.
 Al hablar con clientes presentá fechas como “el lunes 12 de octubre”, nunca YYYY-MM-DD. Formato de horarios uniforme: sé coherente en la forma de expresar las franjas horarias en un mismo mensaje. No mezcles estilos como "de 12 a 17 o de 00:00 a 02:00". Si usás formato en punto sin minutos, decí "de 12 a 17 o de 0 a 2 de la madrugada"; si usás formato con minutos, decí "de 12:00 a 17:00 o de 00:00 a 02:00". Mantené siempre el mismo estilo para todas las franjas. Mostrá minutos cuando hagan falta: “16:30”. Si el cliente dice “5 de la tarde”, interpretá 17:00 pero respondé “17”. Conservá YYYY-MM-DD y HH:mm en los argumentos de herramientas; los mensajes de pago mantienen fecha y horarios numéricos completos. No anuncies una franja entera libre si solo verificaste algunos turnos.
 Última consulta real de disponibilidad: ${JSON.stringify(next.availability || null)}. Conservá sus datos al interpretar respuestas breves; volvé a consultar para comprobar disponibilidad actual. Ante un error de parámetros corregí la llamada y reintentá dentro del turno, sin obligar al cliente a repetir lo ya dicho. Si buscan el próximo turno o día libre, la búsqueda parte de la fecha de hoy automáticamente. Un horario no disponible no es un error técnico; ofrecé alternativas reales.
 Fecha elegida explícitamente por el cliente: ${next.requestedDate ? `${next.requestedDate} (${dateLabel(next.requestedDate)})` : 'sin fecha explícita guardada'}. Un cambio de día reemplaza la fecha anterior. Los pagos anteriores no son reservas del nuevo día: nunca reutilices su enlace ni su confirmación para otro turno. PROHIBIDO confundir hoy con mañana: si la fecha indicada o guardada es MAÑANA, referite SIEMPRE como 'mañana' y NUNCA digas 'hoy'. Si el cliente aclara la cancha después de haber pedido turno para mañana (ej. 'es fut7'), continuá buscando para mañana; NUNCA te disculpes diciendo 'te había dicho que estaba ocupado pero hoy sí tenemos lugar'. Si estaba ocupado para mañana a esa hora, sigue siendo para mañana.
@@ -535,7 +535,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               next.availability = { fecha: a.fecha, cancha: a.cancha, nombre: court?.nombre, duracion: a.duracion };
               const hour = a.hora_inicio || next.requestedHour;
               const slotsForDay = value;
-              const exact = hour ? value.find(slot => slot.fecha === a.fecha && slotMatchesHour(slot, hour)) : null;
+              const exact = hour ? value.find(slot => (slot.fecha === a.fecha || slot.inicio < '06:00') && slotMatchesHour(slot, hour)) : null;
               value = { ...next.availability, disponible: slotsForDay.length > 0, fecha_legible: friendlyDate(a.fecha), etiqueta_fecha: dateLabel(a.fecha), slots: slotsForDay, franjas: availabilityRanges(slotsForDay, a.duracion, !court?.duracion_fija), tarifas: pricedAvailabilityRanges(slotsForDay, a.duracion, !court?.duracion_fija), hora_solicitada: hour || null, turno_solicitado: exact ? { ...exact, horario_legible: friendlyRange(exact.inicio, a.duracion, exact.fin) } : null, alternativa: null };
               if (hour && /^\d{2}:\d{2}$/.test(hour) && !exact) {
                 delete next.alternativeOffer;
@@ -544,7 +544,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
                 for (const other of alternatives) {
                   let slots;
                   try { slots = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: other.id, duracion: a.duracion }); } catch { continue; }
-                  const slot = slots.find(s => s.fecha === a.fecha && slotMatchesHour(s, hour));
+                  const slot = slots.find(s => (s.fecha === a.fecha || s.inicio < '06:00') && slotMatchesHour(s, hour));
                   if (!slot) continue;
                   next.alternativeOffer = { fecha: a.fecha, cancha: other.id, nombre: other.nombre, duracion: a.duracion, hora_inicio: slot.inicio };
                   value.alternativa = { ...next.alternativeOffer, slot, fecha_legible: friendlyDate(a.fecha), etiqueta_fecha: dateLabel(a.fecha), horario_legible: friendlyRange(slot.inicio, a.duracion, slot.fin) };
@@ -558,7 +558,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
                   let slots;
                   try { slots = await api.consultarDisponibilidad({ fecha, cancha: a.cancha, duracion: a.duracion }); }
                   catch { break; }
-                  const alternative = slots.find(slot => slot.fecha === fecha && slotMatchesHour(slot, hour));
+                  const alternative = slots.find(slot => (slot.fecha === fecha || slot.inicio < '06:00') && slotMatchesHour(slot, hour));
                   if (!alternative) continue;
                   next.alternativeOffer = { ...next.availability, fecha, hora_inicio: alternative.inicio };
                   value.alternativa = { ...next.alternativeOffer, slot: alternative, fecha_legible: friendlyDate(fecha), etiqueta_fecha: dateLabel(fecha), horario_legible: friendlyRange(alternative.inicio, a.duracion, alternative.fin) };
@@ -625,9 +625,18 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               const canchas = await listCourts();
               const cancha = canchas.find(c => c.id === a.cancha);
               if (!cancha || (cancha.duracion_fija && cancha.duracion_fija !== a.duracion)) throw new Error('Cancha o duración no válida');
-              const slots = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: a.cancha, duracion: a.duracion });
               const targetInicio = /^\d{1,2}$/.test(String(a.hora_inicio || '')) ? `${String(a.hora_inicio).padStart(2, '0')}:00` : String(a.hora_inicio || '');
-              const slot = slots.find(s => s.fecha === a.fecha && (s.inicio === targetInicio || s.inicio === a.hora_inicio));
+              let slots = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: a.cancha, duracion: a.duracion });
+              let slot = slots.find(s => (s.fecha === a.fecha || (targetInicio < '06:00' && s.inicio < '06:00')) && (s.inicio === targetInicio || s.inicio === a.hora_inicio));
+              if (!slot && targetInicio < '06:00') {
+                const prevDate = new Date(`${a.fecha}T12:00:00Z`);
+                prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+                const prevIso = prevDate.toISOString().slice(0, 10);
+                try {
+                  const prevSlots = await api.consultarDisponibilidad({ fecha: prevIso, cancha: a.cancha, duracion: a.duracion });
+                  slot = prevSlots.find(s => (s.fecha === a.fecha || s.inicio < '06:00') && (s.inicio === targetInicio || s.inicio === a.hora_inicio));
+                } catch {}
+              }
               if (!slot) throw new Error('Ese horario no está disponible');
               next.pending = { fecha: slot.fecha, hora_inicio: slot.inicio, cancha: a.cancha, canchaNombre: cancha.nombre, duracion: a.duracion, cliente: { nombre: a.nombre.trim(), email: a.email.trim() } };
               next.offTopic = 0;

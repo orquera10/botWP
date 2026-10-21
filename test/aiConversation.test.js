@@ -350,6 +350,50 @@ test('asking next available day for 18.30 matches overlapping 18:00 slot on upco
   assert.match(offered.replies[0], /sábado 24 de octubre/);
 });
 
+test('asking next available day for 18.30 without a court asks court, then on answering football 7 continues next-day search', async () => {
+  const dates = [];
+  const api = {
+    listarCanchas: async () => [{ id: 7, nombre: 'Fútbol 7/8' }],
+    consultarDisponibilidad: async ({ fecha }) => {
+      dates.push(fecha);
+      if (fecha === '2026-10-24') {
+        return [{ fecha, inicio: '18:00', fin: '19:00', total: 70000, minimo_senia: 35000 }];
+      }
+      return [{ fecha, inicio: '12:00', fin: '13:00', total: 70000, minimo_senia: 35000 }];
+    },
+    listarTerminos: async () => ['Condiciones de Fútbol 7'],
+    crearReserva: () => assert.fail('Offering an alternative cannot create a reservation')
+  };
+  // Turn 1: asks for next day at 18.30 without court
+  const t1 = await handleAiConversation({
+    ...base,
+    now: Date.UTC(2026, 9, 21, 15, 0), // 2026-10-21
+    text: 'el proximo dia disponible para las 18.30',
+    state: {},
+    reservasApi: api
+  });
+  assert.equal(t1.state.requestedHour, '18:30');
+  assert.equal(t1.state.allowsOtherDates, true);
+
+  // Turn 2: answers 'es para futbol 7'
+  const requests = [];
+  const t2 = await handleAiConversation({
+    ...base,
+    now: Date.UTC(2026, 9, 21, 15, 1),
+    text: 'es para futbol 7',
+    state: t1.state,
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('disponibilidad', { fecha: '2026-10-21', cancha: 7, duracion: 1, hora_inicio: '18:30' }),
+      reply('Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:00 a 19:00. ¿Te sirve?')
+    ], requests)
+  });
+  assert.ok(dates.includes('2026-10-24'));
+  assert.equal(t2.state.alternativeOffer.fecha, '2026-10-24');
+  assert.equal(t2.state.alternativeOffer.hora_inicio, '18:00');
+  assert.match(t2.replies[0], /sábado 24 de octubre/);
+});
+
 test('automatic alternative search stops after seven days', async () => {
   let queries = 0;
   const result = await handleAiConversation({ ...base, text: 'para las 17 o si no otro día', reservasApi: { listarCanchas: async () => [{ id: 1 }], consultarDisponibilidad: async () => { queries++; return []; } }, fetchImpl: fakeGemini([call('disponibilidad', { fecha: '2026-10-21', cancha: 1, duracion: 3 }), reply('No encontré ese horario en los próximos siete días.')]) });

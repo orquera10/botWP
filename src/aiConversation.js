@@ -453,7 +453,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
         const asksBookingConfirmation = (
           (/confirm[aeá]?s?\b/i.test(normalize(answer)) && /link|enlace|pago|seña|sena|reserva/i.test(normalize(answer))) ||
           (/(?:generamos|paso|pasamos|te paso|te mando|enviamos|mando|queres que genere|queres el)\b.{0,50}(?:link|enlace|mercadopago)/i.test(normalize(answer))) ||
-          (/\b(?:link|enlace)\s+de\s+mercado\s*pago\b/i.test(normalize(answer)) && /\b(?:gener|pag|sen)/i.test(normalize(answer)))
+          (/\b(?:gener(?:o|as|amos|ar)?|pas(?:o|as|amos|ar)?|mand(?:o|as|amos|ar)?|envi(?:o|as|amos|ar)?)\b.{0,30}\b(?:link|enlace)\s+de\s+mercado\s*pago\b/i.test(normalize(answer)))
         );
         const invalidBookingReply = !next.pending && !next.checkout && (
           (chatIdentity && /(?:no (?:pude|puedo|logre)|no se pudo).{0,50}identific/.test(normalize(answer))) ||

@@ -714,3 +714,19 @@ test('hasta las 17 preserves agreed start at 14:30 and calculates 2.5h duration 
   assert.match(output.replies[0], /14:30 a 17/);
   assert.doesNotMatch(output.replies[0], /\b12 a 15\b/);
 });
+
+test('consultas_especificas strips third-person phrasing like El cliente consulta and delivers clean WhatsApp referral', async () => {
+  const output = await handleAiConversation({
+    ...base,
+    text: 'Y cuál sería el costo si son 10 personas mas',
+    fetchImpl: fakeGemini([
+      call('consultas_especificas', { respuesta: 'El cliente consulta por el costo adicional para 10 personas más en un cumpleaños (ya que el reglamento incluye hasta 30 personas).' })
+    ])
+  });
+
+  assert.doesNotMatch(output.replies[0], /el cliente consulta/i);
+  assert.doesNotMatch(output.replies[0], /el usuario/i);
+  assert.match(output.replies[0], /Podés consultarlo por acá:/);
+  assert.match(output.replies[0], /https:\/\/wa.me\/5493886002759/);
+});
+

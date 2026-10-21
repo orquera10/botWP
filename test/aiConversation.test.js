@@ -633,4 +633,45 @@ test('greeting and normal court replies never append the specific-inquiries What
   assert.doesNotMatch(output.replies[0], /wa\.me/);
 });
 
+test('diurnal half-hour slots like 18:30 to 20:00 parse 1.5h duration and allow preparation', async () => {
+  const calls = [];
+  const api = {
+    listarCanchas: async () => [{ id: 5, nombre: 'Fútbol 5' }],
+    consultarDisponibilidad: async ({ fecha, cancha, duracion }) => {
+      calls.push({ fecha, cancha, duracion });
+      return [{ fecha, inicio: '18:30', fin: '20:00', total: 60000, minimo_senia: 30000 }];
+    },
+    crearReserva: async () => ({ reserva: { ticket_id: 99, total_cancha: 60000, senia: 30000 }, mercadopago: { init_point: 'https://mp.fake/test' } })
+  };
+
+  const output = await handleAiConversation({
+    ...base,
+    text: 'quiero reservar fútbol 5 para mañana de 18:30 a 20',
+    state: {},
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('disponibilidad', { fecha: '2026-10-22', cancha: 5, duracion: 1.5, hora_inicio: '18:30' }),
+      call('preparar_reserva', { fecha: '2026-10-22', cancha: 5, duracion: 1.5, hora_inicio: '18:30', nombre: 'Carlos Gomez', email: 'carlos@test.com' })
+    ])
+  });
+
+  assert.equal(calls[0].duracion, 1.5);
+  assert.equal(output.state.pending.duracion, 1.5);
+  assert.equal(output.state.pending.hora_inicio, '18:30');
+  assert.match(output.replies[0], /18:30 a 20/);
+});
+
+test('nocturnal slots with half-hour fraction like 20:30 to 21:30 are corrected to on-the-hour slots', async () => {
+  const output = await handleAiConversation({
+    ...base,
+    text: '¿se puede de 20:30 a 21:30?',
+    state: {},
+    fetchImpl: fakeGemini([reply('Sí, podés reservar de 20:30 a 21:30.')])
+  });
+
+  assert.match(output.replies[0], /a partir de las 20:00 \(horario nocturno\) los turnos se reservan únicamente en horas fijas en punto/);
+  assert.match(output.replies[0], /20:00 a 21:00 o de 21:00 a 22:00/);
+});
+
+
 

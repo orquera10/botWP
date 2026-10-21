@@ -236,7 +236,11 @@ function displayDate(value) {
 }
 
 function parseDuration(text) {
-  const match = String(text || '').match(/\b([1-4])\b/);
+  const norm = String(text || '').toLowerCase().replace(/[,]/g, '.');
+  if (/\b(?:1\s*(?:y\s*media|\.5)|90\s*min(?:utos)?)\b/.test(norm)) return 1.5;
+  if (/\b(?:2\s*(?:y\s*media|\.5)|150\s*min(?:utos)?)\b/.test(norm)) return 2.5;
+  if (/\b(?:3\s*(?:y\s*media|\.5)|210\s*min(?:utos)?)\b/.test(norm)) return 3.5;
+  const match = norm.match(/\b([1-4])\b/);
   return match ? Number(match[1]) : null;
 }
 

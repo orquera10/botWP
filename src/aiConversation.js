@@ -20,9 +20,8 @@ export function withFootballCapacity(cancha) {
 }
 export function normalizeBookingArgs(args = {}) {
   const result = { ...args };
-  for (const key of ['cancha', 'duracion']) {
-    if (typeof result[key] === 'string' && /^\d+$/.test(result[key].trim())) result[key] = Number(result[key]);
-  }
+  if (typeof result.cancha === 'string' && /^\d+$/.test(result.cancha.trim())) result.cancha = Number(result.cancha);
+  if (typeof result.duracion === 'string' && /^\d+(?:\.\d+)?$/.test(result.duracion.trim())) result.duracion = Number(result.duracion);
   if (typeof result.hora_inicio === 'string' && /^\d{1,2}(?::\d{2})?$/.test(result.hora_inicio.trim())) {
     const [hour, minute = '00'] = result.hora_inicio.trim().split(':');
     result.hora_inicio = `${hour.padStart(2, '0')}:${minute}`;
@@ -32,7 +31,7 @@ export function normalizeBookingArgs(args = {}) {
 const declaration = (name, description, properties = {}, required = []) => ({ name, description, parameters: schema(properties, required) });
 const tools = [
   declaration('canchas', 'Lista canchas, precios base y duración fija.'),
-  declaration('disponibilidad', 'Horarios reales, franjas sin huecos ocupados, precio total y seña de una cancha. Si pidió una hora, incluir hora_inicio: busca otra cancha compatible para el MISMO día y hora cuando está ocupada. Solo busca otros días si el cliente lo pide. Primero consultar canchas para obtener el ID interno.', { fecha: { ...str, description: 'Fecha YYYY-MM-DD' }, hora_inicio: str, cancha: { ...num, description: 'ID interno obtenido de canchas; NO cantidad de jugadores' }, duracion: { ...num, description: 'Duración en HORAS: una hora = 1, nunca 60' } }, ['fecha', 'cancha', 'duracion']),
+  declaration('disponibilidad', 'Horarios reales, franjas sin huecos ocupados, precio total y seña de una cancha. Si pidió una hora, incluir hora_inicio: busca otra cancha compatible para el MISMO día y hora cuando está ocupada. Solo busca otros días si el cliente lo pide. Primero consultar canchas para obtener el ID interno.', { fecha: { ...str, description: 'Fecha YYYY-MM-DD' }, hora_inicio: str, cancha: { ...num, description: 'ID interno obtenido de canchas; NO cantidad de jugadores' }, duracion: { ...num, description: 'Duración en HORAS: una hora = 1, una hora y media = 1.5, dos horas = 2, nunca minutos' } }, ['fecha', 'cancha', 'duracion']),
   declaration('terminos', 'Condiciones y reglamento oficial de reserva de cancha o cumpleaños.', { cancha: num }),
   declaration('mis_turnos', 'Reservas del remitente autenticado. No permite consultar otras personas.'),
   declaration('mi_cliente', 'Datos del remitente autenticado.'),
@@ -86,8 +85,8 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const historyMentionsOtherDates = Boolean(previous.allowsOtherDates || (next.history || []).slice(-4).some(h => h.role === 'user' && /\b(otro[s]? dia[s]?|otra[s]? fecha[s]?|proximo[s]? dia[s]?|proxima[s]? fecha[s]?|proximo[s]? turno[s]?|q(?:ue)? dia[s]?|q(?:ue)? fecha[s]?|cuando (?:tenes|tienen|hay|seria|esta|quedan?))\b/.test(normalize(h.parts?.map(p => p.text).join(' ')))));
   const allowsOtherDates = queryMentionsOtherDates || historyMentionsOtherDates;
   if (allowsOtherDates) next.allowsOtherDates = true;
-  const asksHalfHourSlot = /\b(?:no (?:se )?pueden?|no puede ser|se puede(?:n)?|pueden? ser)\s+turnos?\s+de\s+\d{1,2}[:.]30/i.test(normalize(text)) || /\bturnos?\s+de\s+\d{1,2}[:.]30\s+a\s+\d{1,2}[:.]30\b/i.test(normalize(text));
-  if (asksHalfHourSlot) { delete next.requestedHour; delete next.alternativeOffer; }
+  const asksNightHalfHourSlot = /\b(?:no (?:se )?pueden?|no puede ser|se puede(?:n)?|pueden? ser)\s+turnos?\s+de\s+(?:2[0-3]|0[0-2])[:.]30/i.test(normalize(text)) || /\bturnos?\s+de\s+(?:2[0-3]|0[0-2])[:.]30\s+a\s+\d{1,2}[:.]30\b/i.test(normalize(text));
+  if (asksNightHalfHourSlot) { delete next.requestedHour; delete next.alternativeOffer; }
   else if (wantsOtherHours && !requestedHour) { delete next.requestedHour; delete next.alternativeOffer; }
   else if (requestedHour) {
     const rawH = requestedHour[1] ?? requestedHour[3];
@@ -105,7 +104,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   let requestedDuration;
   if (range && [range[1], range[3]].every(h => Number(h) < 24) && [range[2] || 0, range[4] || 0].every(m => Number(m) < 60)) {
     const minutes = (Number(range[3]) * 60 + Number(range[4] || 0) - Number(range[1]) * 60 - Number(range[2] || 0) + 1440) % 1440;
-    if (minutes >= 60 && minutes <= 240 && minutes % 60 === 0) requestedDuration = minutes / 60;
+    if (minutes >= 60 && minutes <= 240 && minutes % 30 === 0) requestedDuration = minutes / 60;
   }
   // Preserve explicit day changes independently of the model's shortened history.
   const explicitIso = String(text).match(/\b(\d{4}-\d{2}-\d{2})\b/);
@@ -315,7 +314,7 @@ Avanzá de a un paso, tanto en texto como en notas de voz. Si pide turno para un
 Si ya eligió cancha o informó jugadores, reutilizá ese dato y no vuelvas a preguntarlo. Si es cumpleaños no preguntes jugadores de fútbol. Una vez definida la cancha, mostrale sus franjas reales y ofrecé alternativas del mismo día cuando el horario esté ocupado. No agregues saludos largos ni explicaciones innecesarias.
 Opciones verificadas para el día: ${JSON.stringify(next.dayOptions?.fecha === next.requestedDate ? next.dayOptions : null)}. ${selectionNeeded ? (next.dayOptions?.hora_solicitada && next.dayOptions?.hora_disponible === false ? `El cliente consultó para las ${next.dayOptions.hora_solicitada}, pero a esa hora NO hay lugar en ninguna cancha (está ocupado). Informá que a las ${next.dayOptions.hora_solicitada} está ocupado, indicá las franjas libres que sí hay ese día (con formato uniforme, sin mezclar "12 a 17" con "00:00 a 02:00") y preguntá cuántos juegan o si les sirve otro horario. No consultes otra vez disponibilidad.` : next.dayOptions?.hora_solicitada && next.dayOptions?.hora_disponible === true ? `El cliente consultó para las ${next.dayOptions.hora_solicitada} y a esa hora SÍ hay lugar en: ${(next.dayOptions.opciones_con_hora || []).map(c => c.nombre).join(', ')}. Confirmá la disponibilidad a las ${next.dayOptions.hora_solicitada} y preguntá cuántos van a jugar o si es para un cumple.` : 'Falta definir actividad o cantidad de jugadores: respondé con las opciones verificadas disponibles y UNA pregunta corta. No muestres franjas, horarios ni precios todavía. No consultes otra vez disponibilidad ni prepares reservas. Si una consulta falló, no afirmes disponibilidad de esa cancha; si ninguna está verificada, preguntá qué actividad busca sin inventar disponibilidad.') : 'Continuá con la cancha elegida según jugadores o actividad y conservá los datos anteriores.'}
 Usá un tono amable y educado, sin exagerar modismos ni repetir saludos en cada mensaje. Escribí “Fútbol 5”, horarios como “20:00 a 21:00” y precios con “$”. NUNCA digas "che", “de 5”, “bancás un toque” ni prometas consultar más tarde: consultá las herramientas en este turno. “De 20 a 21” significa inicio 20:00 y duración 1 hora; “a las 20” o “21” actualizan solo el horario conservando fecha, cancha y duración ya elegidas. Si propusiste fútbol 5 y el cliente respondió con horario, continuá con esa cancha, no vuelvas a preguntar cuál.
-Turnos estrictamente en horas fijas en punto: en todas las canchas de fútbol los turnos se reservan ÚNICAMENTE en horas fijas en punto (por ejemplo de 18:00 a 19:00 o de 19:00 a 20:00). NO existen turnos fraccionados que comiencen o terminen con minutos fraccionados (como 18:30 a 19:30 o 14:00 a 15:30). Si el cliente pregunta si puede ser de 18:30 a 19:30 o con fracción de minutos, está TERMINANTEMENTE PROHIBIDO darle la razón, decir "me fijé mal" o decir que sí se puede. Explicá con amabilidad que los turnos se toman únicamente en horas en punto (por ejemplo de 18:00 a 19:00 o de 19:00 a 20:00) y consultale cuál de esas dos opciones prefiere. El horario que le digas al cliente DEBE coincidir con el turno real del sistema: si el turno es de 18:00 a 19:00, jamás le digas que es de 18:30 a 19:30 ni generes una reserva diciendo eso.
+Horarios y turnos permitidos: hasta las 20:00 (horario diurno/vespertino, de 13:00 a 20:00) los turnos SÍ pueden solicitarse en horas no en punto fraccionadas cada 30 minutos (por ejemplo de 18:30 a 19:30 o de 18:30 a 20:00, 14:00 a 15:30) y con duraciones fraccionadas (1 hora, 1.5 horas, etc.), siempre que finalicen a las 20:00 o antes. A partir de las 20:00 (horario nocturno, de 20:00 a 02:00) los turnos se reservan ÚNICAMENTE en horas fijas en punto (por ejemplo 20 a 21, 20 a 22, 21 a 22, 22 a 23, 23 a 1, 00 a 01); no se permiten turnos nocturnos con minutos fraccionados (como 20:30 a 21:30). Si el cliente pide un turno nocturno fraccionado (ej. 20:30 a 21:30), explicá con amabilidad que a partir de las 20:00 (horario nocturno) los turnos se toman únicamente en horas fijas en punto (por ejemplo de 20:00 a 21:00 o de 21:00 a 22:00) y consultale cuál de esas opciones prefiere. El horario que le digas al cliente DEBE coincidir con el turno real del sistema consultado con disponibilidad.
 Al hablar con clientes presentá fechas como “el lunes 12 de octubre”, nunca YYYY-MM-DD. Formato de horarios uniforme: sé coherente en la forma de expresar las franjas horarias en un mismo mensaje. No mezcles estilos como "de 12 a 17 o de 00:00 a 02:00". Si usás formato en punto sin minutos, decí "de 12 a 17 o de 0 a 2 de la madrugada"; si usás formato con minutos, decí "de 12:00 a 17:00 o de 00:00 a 02:00". Mantené siempre el mismo estilo para todas las franjas. Mostrá minutos cuando hagan falta: “16:30”. Si el cliente dice “5 de la tarde”, interpretá 17:00 pero respondé “17”. Conservá YYYY-MM-DD y HH:mm en los argumentos de herramientas; los mensajes de pago mantienen fecha y horarios numéricos completos. No anuncies una franja entera libre si solo verificaste algunos turnos.
 Última consulta real de disponibilidad: ${JSON.stringify(next.availability || null)}. Conservá sus datos al interpretar respuestas breves; volvé a consultar para comprobar disponibilidad actual. Ante un error de parámetros corregí la llamada y reintentá dentro del turno, sin obligar al cliente a repetir lo ya dicho. Si buscan el próximo turno o día libre, la búsqueda parte de la fecha de hoy automáticamente. Un horario no disponible no es un error técnico; ofrecé alternativas reales.
 Fecha elegida explícitamente por el cliente: ${next.requestedDate || 'sin fecha explícita guardada'}. Un cambio de día reemplaza la fecha anterior. Los pagos anteriores no son reservas del nuevo día: nunca reutilices su enlace ni su confirmación para otro turno.
@@ -422,7 +421,10 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
         if (/\b(?:de\s+)?(\d{1,2}):30\s+a\s+(\d{1,2}):30\b/.test(answer)) {
           const m = answer.match(/\b(?:de\s+)?(\d{1,2}):30\s+a\s+(\d{1,2}):30\b/);
           const h1 = Number(m[1]);
-          answer = `No, los turnos se reservan únicamente en horarios en punto (por ejemplo de ${h1}:00 a ${h1 + 1}:00 o de ${h1 + 1}:00 a ${h1 + 2}:00). ¿Te sirve alguno de esos dos?`;
+          const h2 = Number(m[2]);
+          if (h1 >= 20 || h2 > 20) {
+            answer = `No, a partir de las 20:00 (horario nocturno) los turnos se reservan únicamente en horas fijas en punto (por ejemplo de ${h1}:00 a ${h1 + 1}:00 o de ${h1 + 1}:00 a ${h1 + 2}:00). ¿Te sirve alguno de esos dos?`;
+          }
         }
         next.history = [...next.history, { role: 'user', parts: [{ text: String(text) }] }, { role: 'model', parts: [{ text: answer }] }].slice(-12);
         next.offTopic = 0;
@@ -447,7 +449,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               if (selectionNeeded) throw new Error('Las opciones del día ya están consultadas. Falta preguntar cuántos juegan o si buscan cumpleaños antes de mostrar horarios de una cancha.');
               if (!a.fecha) a.fecha = next.requestedDate || localDate;
               if (!a.duracion) a.duracion = 1;
-              if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || !Number.isInteger(a.duracion) || a.duracion < 1 || a.duracion > 4) throw new Error('Fecha inválida o duración incorrecta: expresar duración en horas enteras de 1 a 4, nunca minutos.');
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || typeof a.duracion !== 'number' || a.duracion < 1 || a.duracion > 4 || (a.duracion * 2 !== Math.floor(a.duracion * 2))) throw new Error('Fecha inválida o duración incorrecta: expresar duración en horas (1, 1.5, 2, etc.), de 1 a 4 horas.');
               const canchas = await listCourts();
               if (!canchas.some(c => c.id === a.cancha)) { value = { error: 'ID de cancha incorrecto. Elegí el ID interno del listado, no el número de jugadores.', canchas }; break; }
               value = await api.consultarDisponibilidad({ fecha: a.fecha, cancha: a.cancha, duracion: a.duracion });
@@ -533,7 +535,7 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
               const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registeredEmail || '') ? registeredEmail : a.email;
               a.nombre = nombre;
               a.email = email || '';
-              if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || !/^\d{2}:\d{2}$/.test(a.hora_inicio) || !Number.isInteger(a.duracion) || a.duracion < 1 || a.duracion > 4 || !a.nombre?.trim() || (!chatIdentity && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email || ''))) throw new Error('Faltan datos válidos de la reserva');
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(a.fecha) || !/^\d{2}:\d{2}$/.test(a.hora_inicio) || typeof a.duracion !== 'number' || a.duracion < 1 || a.duracion > 4 || (a.duracion * 2 !== Math.floor(a.duracion * 2)) || !a.nombre?.trim() || (!chatIdentity && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email || ''))) throw new Error('Faltan datos válidos de la reserva');
               const canchas = await listCourts();
               const cancha = canchas.find(c => c.id === a.cancha);
               if (!cancha || (cancha.duracion_fija && cancha.duracion_fija !== a.duracion)) throw new Error('Cancha o duración no válida');

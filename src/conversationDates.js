@@ -11,19 +11,15 @@ export function upcomingWeekday(text, now, timeZone) {
 }
 
 export function slotMatchesHour(slot, targetHour) {
-  if (!slot || !targetHour) return false;
-  if (slot.inicio === targetHour) return true;
-  const [sH, sM] = String(slot.inicio || '00:00').split(':').map(Number);
-  const [tH, tM] = String(targetHour || '00:00').split(':').map(Number);
-  const startMins = sH * 60 + sM;
-  const targetMins = tH * 60 + tM;
-  let endMins;
-  if (slot.fin) {
-    let [fH, fM] = String(slot.fin).split(':').map(Number);
-    if (fH === 0 && fM === 0 && sH > 0) fH = 24;
-    endMins = fH * 60 + fM;
-  } else {
-    endMins = startMins + 60;
-  }
-  return targetMins >= startMins && targetMins < endMins;
+  if (!slot?.inicio || !targetHour) return false;
+  const normalizeTime = t => {
+    const parts = String(t).trim().split(':');
+    const h = Number(parts[0]);
+    const m = Number(parts[1] || '0');
+    if (Number.isNaN(h) || Number.isNaN(m)) return '';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+  const normSlot = normalizeTime(slot.inicio);
+  const normTarget = normalizeTime(targetHour);
+  return Boolean(normSlot && normTarget && normSlot === normTarget);
 }

@@ -314,14 +314,14 @@ test('an occupied birthday hour proactively offers the nearest day and only sele
   assert.match(accepted.replies[0], /condiciones se envían al acreditarse/);
 });
 
-test('asking next available day for 18.30 matches overlapping 18:00 slot on upcoming Saturday', async () => {
+test('asking next available day for 18.30 matches 18:30 slot on upcoming Saturday', async () => {
   const dates = [];
   const api = {
     listarCanchas: async () => [{ id: 1, nombre: 'Fútbol 7/8' }],
     consultarDisponibilidad: async ({ fecha }) => {
       dates.push(fecha);
       if (fecha === '2026-10-24') {
-        return [{ fecha, inicio: '18:00', fin: '19:00', total: 500, minimo_senia: 150 }];
+        return [{ fecha, inicio: '18:30', fin: '19:30', total: 500, minimo_senia: 150 }];
       }
       return [{ fecha, inicio: '21:00', fin: '22:00', total: 500, minimo_senia: 150 }];
     },
@@ -337,16 +337,16 @@ test('asking next available day for 18.30 matches overlapping 18:00 slot on upco
     reservasApi: api,
     fetchImpl: fakeGemini([
       call('disponibilidad', { fecha: '2026-10-22', cancha: 1, duracion: 1, hora_inicio: '18:30' }),
-      reply('Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:00 a 19:00. ¿Te sirve?')
+      reply('Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:30 a 19:30. ¿Te sirve?')
     ], requests)
   });
   assert.deepEqual(dates, ['2026-10-22', '2026-10-23', '2026-10-24']);
   const verified = requests[1].contents.at(-1).parts[0].functionResponse.response.result;
   assert.equal(verified.alternativa.fecha, '2026-10-24');
-  assert.equal(verified.alternativa.hora_inicio, '18:00');
-  assert.equal(verified.alternativa.horario_legible, '18 a 19');
+  assert.equal(verified.alternativa.hora_inicio, '18:30');
+  assert.equal(verified.alternativa.horario_legible, '18:30 a 19:30');
   assert.equal(offered.state.alternativeOffer.fecha, '2026-10-24');
-  assert.equal(offered.state.alternativeOffer.hora_inicio, '18:00');
+  assert.equal(offered.state.alternativeOffer.hora_inicio, '18:30');
   assert.match(offered.replies[0], /sábado 24 de octubre/);
 });
 
@@ -357,7 +357,7 @@ test('asking next available day for 18.30 without a court asks court, then on an
     consultarDisponibilidad: async ({ fecha }) => {
       dates.push(fecha);
       if (fecha === '2026-10-24') {
-        return [{ fecha, inicio: '18:00', fin: '19:00', total: 70000, minimo_senia: 35000 }];
+        return [{ fecha, inicio: '18:30', fin: '19:30', total: 70000, minimo_senia: 35000 }];
       }
       return [{ fecha, inicio: '12:00', fin: '13:00', total: 70000, minimo_senia: 35000 }];
     },
@@ -385,12 +385,12 @@ test('asking next available day for 18.30 without a court asks court, then on an
     reservasApi: api,
     fetchImpl: fakeGemini([
       call('disponibilidad', { fecha: '2026-10-21', cancha: 7, duracion: 1, hora_inicio: '18:30' }),
-      reply('Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:00 a 19:00. ¿Te sirve?')
+      reply('Para Fútbol 7 el próximo turno disponible a las 18:30 es el sábado 24 de octubre de 18:30 a 19:30. ¿Te sirve?')
     ], requests)
   });
   assert.ok(dates.includes('2026-10-24'));
   assert.equal(t2.state.alternativeOffer.fecha, '2026-10-24');
-  assert.equal(t2.state.alternativeOffer.hora_inicio, '18:00');
+  assert.equal(t2.state.alternativeOffer.hora_inicio, '18:30');
   assert.match(t2.replies[0], /sábado 24 de octubre/);
 });
 
@@ -728,5 +728,79 @@ test('consultas_especificas strips third-person phrasing like El cliente consult
   assert.doesNotMatch(output.replies[0], /el usuario/i);
   assert.match(output.replies[0], /Podés consultarlo por acá:/);
   assert.match(output.replies[0], /https:\/\/wa.me\/5493886002759/);
+});
+
+test('saying 18.30 quiero after alternative offer adopts the proposed date and calls preparar_reserva without double confirmation', async () => {
+  const api = {
+    listarCanchas: async () => [{ id: 7, nombre: 'Fútbol 7/8' }],
+    consultarDisponibilidad: async ({ fecha, duracion }) => [{ fecha, inicio: '18:30', fin: '19:30', total: 70000, minimo_senia: 35000 }],
+    listarTerminos: async () => ['Condiciones de Fútbol 7'],
+    crearReserva: () => assert.fail('Should not create reservation before confirmation')
+  };
+  const state = {
+    updatedAt: now,
+    requestedDate: '2026-10-22',
+    requestedHour: '18:30',
+    alternativeOffer: {
+      fecha: '2026-10-24',
+      cancha: 7,
+      nombre: 'Fútbol 7/8',
+      duracion: 1,
+      hora_inicio: '18:30'
+    },
+    customer: { exists: true, nombre: 'Juan Perez', email: 'juan@test.com' }
+  };
+  const requests = [];
+  const output = await handleAiConversation({
+    ...base,
+    text: '18.30 quiero',
+    state,
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('preparar_reserva', { fecha: '2026-10-24', cancha: 7, duracion: 1, hora_inicio: '18:30', nombre: 'Juan Perez', email: 'juan@test.com' })
+    ], requests)
+  });
+
+  assert.equal(output.state.requestedDate, '2026-10-24');
+  assert.equal(output.state.requestedHour, '18:30');
+  assert.ok(output.state.pending);
+  assert.equal(output.state.pending.fecha, '2026-10-24');
+  assert.equal(output.state.pending.hora_inicio, '18:30');
+  assert.match(output.replies[0], /sábado 24 de octubre/);
+  assert.match(output.replies[0], /¿Generamos el enlace de Mercado Pago\?/);
+});
+
+test('invalidBookingReply recovers when Gemini attempts text booking summary asking generamos enlace instead of preparar_reserva', async () => {
+  const api = {
+    listarCanchas: async () => [{ id: 7, nombre: 'Fútbol 7/8' }],
+    consultarDisponibilidad: async ({ fecha }) => [{ fecha, inicio: '18:30', fin: '19:30', total: 70000, minimo_senia: 35000 }],
+    listarTerminos: async () => ['Condiciones de Fútbol 7'],
+    crearReserva: () => assert.fail('Should not create reservation')
+  };
+  const diagnostics = [];
+  const requests = [];
+  const output = await handleAiConversation({
+    ...base,
+    canonicalJid: '5491112345678@s.whatsapp.net',
+    text: '18.30 quiero',
+    state: {
+      updatedAt: now,
+      requestedDate: '2026-10-24',
+      requestedHour: '18:30',
+      availability: { fecha: '2026-10-24', cancha: 7, duracion: 1 },
+      customer: { exists: true, nombre: 'Juan Perez', email: 'juan@test.com' }
+    },
+    reservasApi: api,
+    onDiagnostic: d => diagnostics.push(d),
+    fetchImpl: fakeGemini([
+      reply('¡Perfecto! Te reservo Fútbol 7 para el sábado 24 de 18:30 a 19:30. Total $70.000, seña $35.000. ¿Generamos el enlace de Mercado Pago?'),
+      call('preparar_reserva', { fecha: '2026-10-24', cancha: 7, duracion: 1, hora_inicio: '18:30', nombre: 'Juan Perez', email: 'juan@test.com' })
+    ], requests)
+  });
+
+  assert.equal(diagnostics.some(d => d.event === 'booking_reply_recovery'), true);
+  assert.ok(output.state.pending);
+  assert.equal(output.state.pending.hora_inicio, '18:30');
+  assert.match(output.replies[0], /¿Generamos el enlace de Mercado Pago\?/);
 });
 

@@ -14,24 +14,23 @@ test('weekday requests resolve using the current local day instead of a stale re
   assert.equal(upcomingWeekday('el martes pasado', now, zone), null);
 });
 
-test('slotMatchesHour checks whether target hour falls within slot start and end', () => {
+test('slotMatchesHour checks whether target hour matches slot start time', () => {
   const slot = { inicio: '18:00', fin: '19:00' };
   assert.equal(slotMatchesHour(slot, '18:00'), true);
-  assert.equal(slotMatchesHour(slot, '18:30'), true);
-  assert.equal(slotMatchesHour(slot, '18:59'), true);
+  assert.equal(slotMatchesHour(slot, '18'), true);
+  assert.equal(slotMatchesHour(slot, '18:30'), false);
   assert.equal(slotMatchesHour(slot, '19:00'), false);
   assert.equal(slotMatchesHour(slot, '17:59'), false);
   assert.equal(slotMatchesHour(slot, null), false);
   assert.equal(slotMatchesHour(null, '18:00'), false);
 
-  // Missing fin defaults to 1 hour after inicio
-  const slotNoFin = { inicio: '18:00' };
-  assert.equal(slotMatchesHour(slotNoFin, '18:30'), true);
-  assert.equal(slotMatchesHour(slotNoFin, '19:30'), false);
+  const slotHalfHour = { inicio: '18:30', fin: '19:30' };
+  assert.equal(slotMatchesHour(slotHalfHour, '18:30'), true);
+  assert.equal(slotMatchesHour(slotHalfHour, '18:00'), false);
 
-  // Midnight crossing slot (23:00 to 00:00)
   const midnightSlot = { inicio: '23:00', fin: '00:00' };
-  assert.equal(slotMatchesHour(midnightSlot, '23:30'), true);
-  assert.equal(slotMatchesHour(midnightSlot, '22:30'), false);
+  assert.equal(slotMatchesHour(midnightSlot, '23:00'), true);
+  assert.equal(slotMatchesHour(midnightSlot, '23'), true);
+  assert.equal(slotMatchesHour(midnightSlot, '23:30'), false);
 });
 

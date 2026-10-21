@@ -158,8 +158,9 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     if (!courts) courts = (await api.listarCanchas()).map(withFootballCapacity);
     return courts;
   }
-  const limit = Math.max(1, Number(process.env.AI_MAX_CALLS_PER_HOUR) || 60);
+  const limit = Math.max(1, Number(process.env.AI_MAX_CALLS_PER_HOUR) || 150);
   next.quota = state?.quota && now - state.quota.start < 3_600_000 ? { ...state.quota } : { start: now, calls: 0 };
+  const requestTimeoutMs = Math.max(5_000, Number(process.env.AI_REQUEST_TIMEOUT_MS) || 45_000);
   const catalogUrl = businessSettings.catalogUrl || process.env.CATALOG_URL || '';
   const specificContactUrl = businessSettings.specificContactUrl || BIRTHDAY_CONTACT_URL;
   const specificContactMessage = `Podés consultarlo por acá:\n${specificContactUrl}`;
@@ -345,12 +346,12 @@ Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.we
       for (let attempt = 0; attempt < 3; attempt++) {
         if (next.quota.calls >= limit) throw new Error('Local quota reached');
         if (now - globalQuota.start >= 3_600_000) globalQuota = { start: now, calls: 0 };
-        if (globalQuota.calls >= (Number(process.env.AI_MAX_TOTAL_CALLS_PER_HOUR) || 600)) throw new Error('Local quota reached');
+        if (globalQuota.calls >= (Number(process.env.AI_MAX_TOTAL_CALLS_PER_HOUR) || 1500)) throw new Error('Local quota reached');
         globalQuota.calls++;
         next.quota.calls++;
         try {
           const response = await (live?.request || fetchImpl)(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(25_000),
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(requestTimeoutMs),
             body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, tools: [{ functionDeclarations: tools }], generationConfig: { maxOutputTokens: 1200, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } } })
           });
           if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);

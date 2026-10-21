@@ -5,7 +5,7 @@ export const isLiveModel = model => /(?:^|-)live(?:-|$)/.test(model);
 
 // One session per incoming WhatsApp message. Tool rounds share the same session;
 // conversation history is restored from the existing server-side state.
-export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, timeoutMs = 45_000 }) {
+export function createGeminiLiveTransport({ model, apiKey, Socket = WebSocket, timeoutMs = 60_000 }) {
   let socket;
   let waiting;
   let timer;

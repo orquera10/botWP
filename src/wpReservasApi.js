@@ -39,7 +39,7 @@ async function request(config, action, { method = 'GET', params = {}, body = nul
     try {
       response = await fetch(url, {
         method,
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(Number(process.env.WP_API_TIMEOUT_MS) || 25_000),
         headers: {
           'Content-Type': 'application/json',
           [authHeader]: apiKey

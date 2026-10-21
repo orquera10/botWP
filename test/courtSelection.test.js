@@ -89,3 +89,72 @@ test('explicit or previously supplied players and court types do not trigger ano
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'model', parts: [{ text: '¿Cuántos van a jugar?' }] }, { role: 'user', parts: [{ text: '10' }] }]), false);
 });
 
+test('requested hour when occupied across all courts alerts that the specific hour is occupied', async () => {
+  let promptText = '';
+  const output = await handleAiConversation({
+    text: 'hola tenes turno para mñn a las 18:30',
+    now: Date.UTC(2026, 9, 21, 11),
+    reservasApi: {
+      listarCanchas: async () => [
+        { id: 1, nombre: 'Fútbol 5' },
+        { id: 2, nombre: 'Fútbol 7/8' },
+        { id: 3, nombre: 'Cumpleaños', duracion_fija: 3 }
+      ],
+      consultarDisponibilidad: async ({ fecha, cancha }) => {
+        // Slots only at 12:00 to 17:00, 18:30 is occupied
+        return [
+          { fecha, inicio: '12:00', fin: '13:00' },
+          { fecha, inicio: '16:00', fin: '17:00' }
+        ];
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      promptText = JSON.parse(options.body).systemInstruction.parts[0].text;
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { role: 'model', parts: [{ text: 'A las 18:30 está ocupado en todas las canchas. Tenemos de 12 a 17. ¿Cuántos van a jugar o les sirve otro horario?' }] } }]
+        })
+      };
+    }
+  });
+
+  assert.equal(output.state.dayOptions.hora_solicitada, '18:30');
+  assert.equal(output.state.dayOptions.hora_disponible, false);
+  assert.deepEqual(output.state.dayOptions.opciones_con_hora, []);
+  assert.match(promptText, /18:30.*ocupado/);
+  assert.match(output.replies[0], /18:30 está ocupado/);
+});
+
+test('requested hour when available confirms availability for that specific hour', async () => {
+  let promptText = '';
+  const output = await handleAiConversation({
+    text: 'hola tenes turno para mñn a las 15:00',
+    now: Date.UTC(2026, 9, 21, 11),
+    reservasApi: {
+      listarCanchas: async () => [
+        { id: 1, nombre: 'Fútbol 5' },
+        { id: 2, nombre: 'Fútbol 7/8' }
+      ],
+      consultarDisponibilidad: async ({ fecha, cancha }) => {
+        return [{ fecha, inicio: '15:00', fin: '16:00' }];
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      promptText = JSON.parse(options.body).systemInstruction.parts[0].text;
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { role: 'model', parts: [{ text: 'Para mañana a las 15:00 tenemos disponible en Fútbol 5 y Fútbol 7/8. ¿Cuántos van a jugar?' }] } }]
+        })
+      };
+    }
+  });
+
+  assert.equal(output.state.dayOptions.hora_solicitada, '15:00');
+  assert.equal(output.state.dayOptions.hora_disponible, true);
+  assert.equal(output.state.dayOptions.opciones_con_hora.length, 2);
+  assert.match(promptText, /15:00.*hay lugar/);
+  assert.match(output.replies[0], /15:00 tenemos disponible/);
+});
+

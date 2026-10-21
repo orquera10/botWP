@@ -9,3 +9,16 @@ export function upcomingWeekday(text, now, timeZone) {
   date.setUTCDate(date.getUTCDate() + (offset || 7));
   return date.toISOString().slice(0, 10);
 }
+
+export function slotMatchesHour(slot, targetHour) {
+  if (!slot || !targetHour) return false;
+  if (slot.inicio === targetHour) return true;
+  const [sH, sM] = String(slot.inicio || '00:00').split(':').map(Number);
+  const [tH, tM] = String(targetHour || '00:00').split(':').map(Number);
+  const startMins = sH * 60 + sM;
+  const targetMins = tH * 60 + tM;
+  let [fH, fM] = String(slot.fin || '00:00').split(':').map(Number);
+  if (fH === 0 && fM === 0 && sH > 0) fH = 24;
+  const endMins = fH * 60 + fM;
+  return targetMins >= startMins && targetMins < endMins;
+}

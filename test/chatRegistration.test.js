@@ -81,3 +81,95 @@ test('automatic menu registration also uses full name, preserves selected slot a
   const cancelled = await handleReservationFlow({ state: output.state, text: 'cancelar', canonicalJid: jid, reservasApi: api });
   assert.equal(cancelled.state.step, 'main_menu');
 });
+
+test('asking price or questions during registration does not block and passes to Gemini instead of repeating name prompt', async () => {
+  let geminiCalled = 0;
+  const api = { supportsChatIdentity: true, registrarChat: async () => ({ status: 'registered', cliente: customer }) };
+  const pendingState = {
+    updatedAt: now,
+    registration: { phase: 'name' },
+    resumeBooking: { fecha: '2026-10-25', hora_inicio: '13:00', cancha: 8, duracion: 3 }
+  };
+  const response = await handleAiConversation({
+    now,
+    canonicalJid: jid,
+    text: 'Precio',
+    state: pendingState,
+    reservasApi: api,
+    fetchImpl: async () => {
+      geminiCalled++;
+      return { ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: 'El cumpleaños sale $180.000 por las 3 horas. ¿Me pasás tu nombre y apellido completos para registrarte?' }] } }] }) };
+    }
+  });
+  assert.equal(geminiCalled, 1);
+  assert.match(response.replies[0], /180\.000/);
+  assert.equal(response.state.registration.phase, 'name');
+
+  // Customer now sends their valid full name
+  const registered = await handleAiConversation({
+    now,
+    canonicalJid: jid,
+    text: 'Mariana Gómez',
+    state: response.state,
+    reservasApi: api,
+    fetchImpl: () => assert.fail('Valid full name must register directly without Gemini')
+  });
+  assert.equal(registered.state.customer.id, 9);
+  assert.match(registered.replies[0], /¡Listo, ya te registré! ¿Seguimos con el turno del domingo 25 de octubre a las 13:00\?/);
+});
+
+test('asking for afternoon birthday slot maps to 17:00 and composite catalog query does not cut off with direct', async () => {
+  let geminiCalls = 0;
+  const api = {
+    supportsChatIdentity: true,
+    listarCanchas: async () => [{ id: 8, nombre: 'Cumpleaños', duracion_fija: 3, tiene_precios_horarios: false }],
+    consultarDisponibilidad: async () => [
+      { fecha: '2026-10-31', inicio: '13:00', fin: '16:00', total: 180000, minimo_senia: 90000 },
+      { fecha: '2026-10-31', inicio: '21:00', fin: '00:00', total: 180000, minimo_senia: 90000 }
+    ]
+  };
+
+  // Turn 1: user rejects slots and asks for afternoon
+  const turn1 = await handleAiConversation({
+    now,
+    canonicalJid: jid,
+    text: 'Ninguno jaja porque es para 5 años y queremos hacerlo en el horario de la tarde',
+    state: {
+      updatedAt: now,
+      requestedDate: '2026-10-31',
+      availability: { fecha: '2026-10-31', cancha: 8, canchaNombre: 'Cumpleaños' }
+    },
+    reservasApi: api,
+    fetchImpl: async (_url, options) => {
+      geminiCalls++;
+      const prompt = JSON.parse(options.body).systemInstruction.parts[0].text;
+      assert.match(prompt, /Hora solicitada: 17:00/);
+      assert.match(prompt, /180 días de anticipación/);
+      return { ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: 'Para el sábado 31 el horario de la tarde (17 a 20) ya está ocupado. ¿Querés que busquemos para el domingo o el fin de semana siguiente?' }] } }] }) };
+    }
+  });
+  assert.equal(turn1.state.requestedHour, '17:00');
+  assert.match(turn1.replies[0], /17 a 20/);
+
+  // Turn 2: user asks for photo, price, and nearby dates
+  let round = 0;
+  const turn2 = await handleAiConversation({
+    now,
+    canonicalJid: jid,
+    text: 'me pasarías foto del salón la cancha, precio y fechas cercanas ?',
+    state: turn1.state,
+    businessSettings: { catalogUrl: 'https://latoxica-fc.com/catalogo.php' },
+    reservasApi: api,
+    fetchImpl: async () => {
+      round++;
+      if (round === 1) {
+        return { ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ functionCall: { name: 'catalogo', args: {} } }] } }] }) };
+      }
+      return { ok: true, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: 'El cumple sale $180.000 por 3 hs e incluye salón inferior y canchas hasta 30 personas. Podés ver fotos en el catálogo: https://latoxica-fc.com/catalogo.php. Para la tarde tenemos libre el domingo 1 de noviembre.' }] } }] }) };
+    }
+  });
+  assert.equal(round, 2, 'Composite catalog query must allow Gemini second round to include price and dates');
+  assert.match(turn2.replies[0], /180\.000/);
+  assert.match(turn2.replies[0], /catalogo\.php/);
+  assert.match(turn2.replies[0], /domingo 1 de noviembre/);
+});

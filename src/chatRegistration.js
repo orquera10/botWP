@@ -1,4 +1,4 @@
-export const fullNameValid = value => typeof value === 'string' && value.trim().length <= 150 && !/\b(cancha|reservar|horario|precio|quiero|mañana|cancelar)\b/i.test(value) && /^[\p{L}][\p{L}\p{M}'’.-]*(?:\s+[\p{L}][\p{L}\p{M}'’.-]*)+$/u.test(value.trim());
+export const fullNameValid = value => typeof value === 'string' && value.trim().length <= 150 && !/\b(cancha|reservar|reserva|horario|precio|cuanto|cuánto|quiero|mañana|cancelar|foto|fotos|catalogo|catálogo|ninguno)\b/i.test(value) && /^[\p{L}][\p{L}\p{M}'’.-]*(?:\s+[\p{L}][\p{L}\p{M}'’.-]*)+$/u.test(value.trim());
 
 // Codes are passed only to the business API, never to Gemini or its history.
 export async function advanceChatRegistration({ api, state = { phase: 'name' }, text }) {

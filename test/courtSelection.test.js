@@ -216,4 +216,71 @@ test('follow-up hour proposals in active turno inquiry keep needing court select
   assert.doesNotMatch(output.replies[0], /Cancha Promo/);
 });
 
+test('date parsing supports Spanish month names and typos like psrs el 27 de noviembre', async () => {
+  const courts = [{ id: 8, nombre: 'Cumpleaños', duracion_fija: 3 }];
+  const output = await handleAiConversation({
+    text: 'Si psrs el 27 de noviembre quería reservar',
+    now: new Date('2026-10-24T12:00:00-03:00').getTime(),
+    state: {
+      updatedAt: new Date('2026-10-24T12:00:00-03:00').getTime(),
+      availability: { fecha: '2026-10-24', cancha: 8, nombre: 'Cumpleaños', duracion: 3 },
+      history: [
+        { role: 'user', parts: [{ text: 'hola tienen para cumple hoy?' }] },
+        { role: 'model', parts: [{ text: 'Para hoy tenemos disponible de 13 a 16 o de 21 a 00:00. ¿Te sirve alguno?' }] }
+      ]
+    },
+    reservasApi: {
+      listarCanchas: async () => courts,
+      consultarDisponibilidad: async ({ fecha, cancha }) => {
+        assert.equal(fecha, '2026-11-27');
+        assert.equal(cancha, 8);
+        return [{ fecha, inicio: '13:00', fin: '16:00' }];
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      const prompt = JSON.parse(options.body).systemInstruction.parts[0].text;
+      assert.match(prompt, /2026-11-27/);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { role: 'model', parts: [{ text: '¡Dale! Para el viernes 27 de noviembre tenemos disponible de 13 a 16. ¿Te sirve?' }] } }]
+        })
+      };
+    }
+  });
+
+  assert.equal(output.state.requestedDate, '2026-11-27');
+  assert.equal(output.state.availability.cancha, 8);
+  assert.equal(output.state.dayOptions, undefined);
+  assert.match(output.replies[0], /27 de noviembre/);
+
+  // Subsequent multi-line message about son's birthday preserves date and does not ask date again
+  const followUp = await handleAiConversation({
+    text: 'Es un cumple\nDe mi hijo\nQueria consultarte',
+    now: new Date('2026-10-24T12:01:00-03:00').getTime(),
+    state: output.state,
+    reservasApi: {
+      listarCanchas: async () => courts,
+      consultarDisponibilidad: async ({ fecha, cancha }) => {
+        assert.equal(fecha, '2026-11-27');
+        return [{ fecha, inicio: '13:00', fin: '16:00' }];
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      const prompt = JSON.parse(options.body).systemInstruction.parts[0].text;
+      assert.match(prompt, /2026-11-27/);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { role: 'model', parts: [{ text: '¡Qué bueno! Para el cumple de tu hijo tenemos disponible de 13 a 16. ¿Te sirve?' }] } }]
+        })
+      };
+    }
+  });
+
+  assert.equal(followUp.state.requestedDate, '2026-11-27');
+  assert.equal(followUp.state.availability.cancha, 8);
+});
+
+
 

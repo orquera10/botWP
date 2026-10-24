@@ -8,6 +8,21 @@ import { senderPhoneJid } from './whatsappIdentity.js';
 import { advanceChatRegistration, fullNameValid } from './chatRegistration.js';
 import { incompleteModelText } from './aiResponse.js';
 
+const SPANISH_MONTHS = {
+  enero: '01', ene: '01',
+  febrero: '02', feb: '02',
+  marzo: '03', mar: '03',
+  abril: '04', abr: '04',
+  mayo: '05', may: '05',
+  junio: '06', jun: '06',
+  julio: '07', jul: '07',
+  agosto: '08', ago: '08',
+  septiembre: '09', setiembre: '09', sep: '09', set: '09',
+  octubre: '10', oct: '10',
+  noviembre: '11', nov: '11',
+  diciembre: '12', dic: '12'
+};
+
 const schema = (properties, required = []) => ({ type: 'OBJECT', properties, required });
 const str = { type: 'STRING' };
 const num = { type: 'INTEGER' };
@@ -63,9 +78,10 @@ let globalQuota = { start: 0, calls: 0 };
 
 // The caller serializes messages per conversation, including reservation writes.
 export async function handleAiConversation({ state, text, canonicalJid, reservasApi: api, businessName, businessSettings = {}, registrationAvailable = true, onBeforeWrite = async () => {}, onDiagnostic = () => {}, onProgress = async () => {}, fetchImpl = fetch, liveTransportFactory = createGeminiLiveTransport, retryDelay = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now() }) {
-  const fresh = state?.updatedAt && now - state.updatedAt < 30 * 60_000;
+  const flowTimeoutMs = (Number(process.env.RESERVATION_FLOW_TIMEOUT_MINUTES) || 120) * 60_000;
+  const fresh = state?.updatedAt && now - state.updatedAt < flowTimeoutMs;
   const previous = fresh ? state : {};
-  const next = { ...previous, history: [...(previous.history || [])], updatedAt: now };
+  const next = { ...previous, history: [...(state?.history || previous.history || [])], updatedAt: now };
   delete next.fallbackMode;
   delete next.fallbackReason;
   if (businessSettings.aiModeRevision) next.responseModeRevision = businessSettings.aiModeRevision;
@@ -177,16 +193,28 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   }
   // Preserve explicit day changes independently of the model's shortened history.
   const explicitIso = String(text).match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  const explicitMonthName = normalize(text).match(/\b(?:(?:el|para\s+(?:el\s+)?|psrs\s+(?:el\s+)?|del?)\s+)?(\d{1,2})\s+(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)\b(?:\s+(?:del?\s+)?(\d{4}))?/);
   const explicitDayMonth = String(text).match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/);
-  const dayMatch = normalize(text).match(/\b(?:para\s+(?:el\s+)?|(?:el\s+)?dia\s+)(\d{1,2})\b(?![/-]|\s*(?:a[ñn]os?|personas?|jugadores?|chicos?|ni[ñn]os?|nenes?|equipos?|horas?|hs|min|minutos?)\b)/);
+  const dayMatch = normalize(text).match(/\b(?:para\s+(?:el\s+)?|(?:el\s+)?dia\s+)(\d{1,2})\b(?![/-]|\s*(?:a[ñn]os?|personas?|jugadores?|chicos?|ni[ñn]os?|nenes?|equipos?|horas?|hs|min|minutos?|de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre))\b)/);
   const weekdayDate = upcomingWeekday(text, now, businessSettings.timeZone || process.env.BUSINESS_TIME_ZONE || 'America/Argentina/Buenos_Aires');
-  const weekdayOnly = Boolean(weekdayDate && !requestedHour && !explicitIso && !explicitDayMonth && !dayMatch);
+  const weekdayOnly = Boolean(weekdayDate && !requestedHour && !explicitIso && !explicitMonthName && !explicitDayMonth && !dayMatch);
   const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: businessSettings.timeZone || process.env.BUSINESS_TIME_ZONE || 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
   const mananaTarget = new Date(`${localDate}T12:00:00Z`);
   mananaTarget.setUTCDate(mananaTarget.getUTCDate() + 1);
   const mananaDate = mananaTarget.toISOString().slice(0, 10);
   const dateLabel = d => d === localDate ? 'HOY' : d === mananaDate ? 'MAÑANA' : 'FECHA FUTURA';
   if (explicitIso) { next.requestedDate = explicitIso[1]; delete next.pending; delete next.allowsOtherDates; }
+  else if (explicitMonthName && Number(explicitMonthName[1]) >= 1 && Number(explicitMonthName[1]) <= 31) {
+    const monthNum = SPANISH_MONTHS[explicitMonthName[2]];
+    let year = explicitMonthName[3] ? Number(explicitMonthName[3]) : Number(localDate.slice(0, 4));
+    if (!explicitMonthName[3] && Number(monthNum) < Number(localDate.slice(5, 7))) {
+      year += 1;
+    }
+    next.requestedDate = `${year}-${monthNum}-${explicitMonthName[1].padStart(2, '0')}`;
+    delete next.pending;
+    delete next.allowsOtherDates;
+    delete next.alternativeOffer;
+  }
   else if (explicitDayMonth) {
     const year = explicitDayMonth[3] || new Intl.DateTimeFormat('en', { timeZone: businessSettings.timeZone || process.env.BUSINESS_TIME_ZONE || 'America/Argentina/Buenos_Aires', year: 'numeric' }).format(new Date(now));
     next.requestedDate = `${year}-${explicitDayMonth[2].padStart(2, '0')}-${explicitDayMonth[1].padStart(2, '0')}`;
@@ -326,7 +354,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   const discountDaysQuery = wantsDiscountDays(text, next.history);
   const discountQuery = isGeneralDiscountQuery(text) || discountDaysQuery;
   if (discountQuery && !next.requestedDate && next.availability?.fecha) next.requestedDate = next.availability.fecha;
-  const selectionNeeded = needsCourtSelection(text, next.history) || discountQuery;
+  const selectionNeeded = needsCourtSelection(text, next.history, { availability: next.availability, requestedDate: next.requestedDate }) || discountQuery;
   if (selectionNeeded && !next.requestedDate && !discountDaysQuery) {
     const question = discountQuery ? '¿Para qué día buscás? Así veo qué horarios tienen descuento.' : '¡Dale! ¿Cuántos van a jugar?';
     next.history = [...next.history, { role: 'user', parts: [{ text: String(text) }] }, { role: 'model', parts: [{ text: question }] }].slice(-12);

@@ -132,6 +132,9 @@ export function createReservasApi(config = {}) {
     crearReserva(payload) {
       return request(resolvedConfig, 'reservar', { method: 'POST', body: payload });
     },
+    notificarCancelacion(payload) {
+      return request(resolvedConfig, 'notificar_cancelacion', { method: 'POST', body: payload });
+    },
     desvincularCliente(telefono) {
       return request(resolvedConfig, 'desvincular_cliente', { method: 'POST', body: { telefono, confirmar: true } });
     }
@@ -155,3 +158,4 @@ export const consultarTurnos = (...args) => activeApi().consultarTurnos(...args)
 export const consultarCliente = (...args) => activeApi().consultarCliente(...args);
 export const crearCliente = (...args) => activeApi().crearCliente(...args);
 export const crearReserva = (...args) => activeApi().crearReserva(...args);
+export const notificarCancelacion = (...args) => activeApi().notificarCancelacion(...args);

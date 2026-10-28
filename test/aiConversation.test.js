@@ -804,3 +804,33 @@ test('invalidBookingReply recovers when Gemini attempts text booking summary ask
   assert.match(output.replies[0], /¿Generamos el enlace de Mercado Pago\?/);
 });
 
+test('client notifying non-attendance calls notificarCancelacion and explains non-refundable deposit', async () => {
+  let notified = null;
+  const api = {
+    notificarCancelacion: async payload => {
+      notified = payload;
+      return {
+        success: true,
+        message: 'Aviso registrado',
+        terminos: { senia_reembolsable: false, turnos_reprogramables: false }
+      };
+    }
+  };
+  const requests = [];
+  const output = await handleAiConversation({
+    ...base,
+    canonicalJid: '5493881234567@s.whatsapp.net',
+    text: 'Hola, aviso que hoy no voy a poder ir al turno de las 21',
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('aviso_no_asiste', { motivo: 'no voy a poder ir al turno de las 21' }),
+      reply('Entendido, muchas gracias por avisar para que el complejo pueda liberar la cancha. Te recordamos que por reglamento la seña abonada no es reembolsable ni modificable y los turnos no se reprograman.')
+    ], requests)
+  });
+
+  assert.ok(notified);
+  assert.equal(notified.telefono, '5493881234567');
+  assert.match(notified.motivo, /no voy a poder ir/);
+  assert.match(output.replies[0], /no es reembolsable/);
+});
+

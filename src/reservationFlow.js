@@ -447,7 +447,11 @@ function faqAnswer(text) {
   }
 
   if (/\b(reembolso|reembolsable|devolucion|devolver la senia|cancelar el cumple)\b/.test(normalized)) {
-    return 'La seña es totalmente reembolsable únicamente hasta 72 horas antes del evento.';
+    return 'La seña es totalmente reembolsable únicamente hasta 72 horas antes del evento. En turnos comunes, la seña no es reembolsable ni modificable.';
+  }
+
+  if (/\b(no (?:vamos a poder|voy a poder|vamos|voy) ir|no llego a ir|cancelo el turno|cancelar mi turno|cancelo mi turno|libero la cancha|no voy a asistir|no asistire|no asistiremos)\b/.test(normalized)) {
+    return 'Por reglamento, la seña de turnos comunes no es reembolsable ni modificable y los turnos no se reprograman. Muchas gracias por avisar para que el complejo pueda liberar la cancha.';
   }
 
   if (/\b(wifi|estacionamiento|vestuario|vestuarios|ducha|duchas|mascota|mascotas|decoracion|decorar|torta|comida|mesas|sillas|musica|parlante|parlantes|aire acondicionado|calefaccion|payaso|payasos|animador|animadores|animacion|mago|magos|show|shows|titere|titeres)\b/.test(normalized)) {

@@ -83,6 +83,18 @@ test('responde sobre la parrilla y vuelve al menu cuando no hay un flujo activo'
   assert.match(result.replies[0], /1\. Buscar un turno/i);
 });
 
+test('responde recordatorio de senia no reembolsable y agradece aviso al no asistir', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    text: 'Aviso que no voy a poder ir al turno',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'main_menu');
+  assert.match(result.replies[0], /no es reembolsable ni modificable/i);
+  assert.match(result.replies[0], /gracias por avisar/i);
+});
+
 test('consulta y muestra los precios actuales de las canchas', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

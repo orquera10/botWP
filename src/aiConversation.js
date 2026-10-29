@@ -281,8 +281,17 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     }
   }
   let courts;
+  let consumoMinimoAsador = (typeof api?.obtenerConsumoMinimoAsador === 'function' ? api.obtenerConsumoMinimoAsador() : null) ?? 50000;
   async function listCourts() {
-    if (!courts) courts = (await api.listarCanchas()).map(withFootballCapacity);
+    if (!courts) {
+      const result = await api.listarCanchas();
+      courts = (Array.isArray(result) ? result : (result?.canchas || [])).map(withFootballCapacity);
+      if (typeof result?.consumo_minimo_asador === 'number') {
+        consumoMinimoAsador = result.consumo_minimo_asador;
+      } else if (typeof api?.obtenerConsumoMinimoAsador === 'function') {
+        consumoMinimoAsador = api.obtenerConsumoMinimoAsador() ?? 50000;
+      }
+    }
     return courts;
   }
   const limit = Math.max(1, Number(process.env.AI_MAX_CALLS_PER_HOUR) || 150);
@@ -414,6 +423,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
     };
   }
   const discountOptions = discountQuery ? (next.dayOptions?.opciones || []).map(c => ({ ...c, tarifas: c.tarifas.filter(t => t.ahorro > 0) })).filter(c => c.tarifas.length) : [];
+  const formattedMinimoAsador = new Intl.NumberFormat('es-AR').format(consumoMinimoAsador || 50000);
 
   const date = new Date(now).toLocaleString('es-AR', { timeZone: businessSettings.timeZone || process.env.BUSINESS_TIME_ZONE || 'America/Argentina/Buenos_Aires' });
   const system = `Sos recepcionista de ${businessName || 'las canchas'}. Hablá en español argentino, cálido, breve, respetuoso y profesional, sin menús numerados. Fecha y hora local: ${date}.
@@ -457,7 +467,7 @@ No uses el nombre de perfil como identidad verificada. No pidas confirmar datos 
 Solicitud de pago actual: ${JSON.stringify(next.checkout || null)}. Si está pendiente, ayudá a pagar; no generes una segunda solicitud igual.
 Estado de la verificación automática del pago: ${paymentRefresh}. El estado actual del sistema prevalece sobre mensajes anteriores del historial que decían pendiente. Si está confirmada, no pidas pagar la seña ni avisar cuando pague; el saldo restante es otra cosa. Ante “dale, gracias”, un agradecimiento o una despedida, respondé cordial y breve sin repetir el pago ni agregar tareas o preguntas innecesarias. Nunca digas “avisame si pagás”: la acreditación es automática. Si no se pudo verificar, no afirmes que pagó ni que falta pagar; un agradecimiento se responde normalmente sin hablar del estado.
 Pasá el WhatsApp de consultas específicas (${specificContactUrl}, mediante consultas_especificas) ÚNICAMENTE cuando pregunten algo que la IA NO puede responder con el reglamento ni con las herramientas: por ejemplo, grupos de más de 16 personas (ej. 22 personas), alquilar 2 canchas o torneos, qué tamaño o qué incluye en particular la Cancha Promo, cuánto cuestan los adicionales cuyo monto no figura en el reglamento (vajilla, mantelería, salón superior, persona o jugador adicional), cómo o cuándo pagar (“cancelar”) el saldo restante, llevar payasos, animadores, magos o shows externos (NO figuran en el reglamento: NUNCA inventes permisos ni digas que se puede; derivá siempre a consultas_especificas), o dudas operativas que no figuran en el reglamento (llevar carbón, disponibilidad de hielo, usar hornito o microondas). NUNCA digas "El cliente consulta por...": hablá siempre al cliente en segunda persona ("Podés consultarlo por acá:") o simplemente pasale el WhatsApp de dudas específicas. En cambio, si la pregunta YA tiene respuesta en el reglamento (ej. que están prohibidos los peloteros/inflables, que no se pueden ingresar bebidas, que la seña se paga solo por link de Mercado Pago o que en turnos comunes la seña no es reembolsable ni modificable), respondé directamente con el reglamento SIN usar consultas_especificas y SIN pasar el otro número.
-Parrilla / Asador: en cumpleaños está incluida. En turnos comunes nocturnos requiere un consumo mínimo en buffet/cantina (actualmente de $50.000, o el importe indicado en el reglamento/canchas); es consumo, no un alquiler adicional ni parte de la seña de cancha (si solo preguntan por parrilla en cumple o de noche, respondé esto directo sin pasar el otro WhatsApp). Únicamente para turnos comunes diurnos, o si preguntan por carbón/leña u otros detalles no especificados en el reglamento, derivá a ${specificContactUrl} usando consultas_especificas; nunca afirmes que pueden traer carbón por su cuenta ni inventes a qué hora empieza la noche ni apliques ese mínimo a cumpleaños. Si no está claro el tipo de turno o si es diurno/nocturno, explicá brevemente las diferencias o preguntá solo lo necesario.
+Parrilla / Asador: en cumpleaños está incluida. En turnos comunes nocturnos requiere un consumo mínimo en buffet/cantina de $${formattedMinimoAsador}; es consumo, no un alquiler adicional ni parte de la seña de cancha (si solo preguntan por parrilla en cumple o de noche, respondé esto directo sin pasar el otro WhatsApp). Únicamente para turnos comunes diurnos, o si preguntan por carbón/leña u otros detalles no especificados en el reglamento, derivá a ${specificContactUrl} usando consultas_especificas; nunca afirmes que pueden traer carbón por su cuenta ni inventes a qué hora empieza la noche ni apliques ese mínimo a cumpleaños. Si no está claro el tipo de turno o si es diurno/nocturno, explicá brevemente las diferencias o preguntá solo lo necesario.
 Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, information: businessSettings.aiBusinessInfo })}`;
   const contents = [...next.history, { role: 'user', parts: [{ text: String(text) }] }];
   let direct;

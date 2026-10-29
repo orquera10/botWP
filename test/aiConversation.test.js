@@ -834,3 +834,26 @@ test('client notifying non-attendance calls notificarCancelacion and explains no
   assert.match(output.replies[0], /no es reembolsable/);
 });
 
+test('inquiries about grill reflect dynamic minimum consumption configured in API', async () => {
+  const canchas = [{ id: 1, nombre: 'Fútbol 5' }];
+  canchas.consumo_minimo_asador = 60000;
+  const api = {
+    listarCanchas: async () => canchas,
+    obtenerConsumoMinimoAsador: () => 60000
+  };
+  const requests = [];
+  const output = await handleAiConversation({
+    ...base,
+    canonicalJid: '5493881234567@s.whatsapp.net',
+    text: '¿Cuánto es el consumo mínimo para la parrilla?',
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      reply('En cumpleaños está incluida. Para turnos comunes nocturnos requiere un consumo mínimo de $60.000 en buffet.')
+    ], requests)
+  });
+
+  const systemPrompt = requests[0]?.systemInstruction?.parts?.[0]?.text || '';
+  assert.match(systemPrompt, /\$60\.000/);
+  assert.match(output.replies[0], /\$60\.000/);
+});
+

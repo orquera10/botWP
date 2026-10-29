@@ -7,6 +7,7 @@ import {
   chatIdentityEnabled,
   registrarChat,
   listarCanchas,
+  obtenerConsumoMinimoAsador,
   reservasApiConfigured,
   withReservasApi
 } from './wpReservasApi.js';
@@ -407,7 +408,7 @@ function mainMenuMessage(businessSettings = {}) {
   return userMenuMessage(businessSettings, 'Volvimos al menu principal.');
 }
 
-function faqAnswer(text) {
+function faqAnswer(text, consumoMinimoAsador = 50000) {
   const normalized = normalizeText(text);
 
   if (/\b(pelotero|peloteros|cama elastica|camas elasticas|inflable|inflables)\b/.test(normalized)) {
@@ -415,7 +416,8 @@ function faqAnswer(text) {
   }
 
   if (/\b(parrilla|parrillas|asado)\b/.test(normalized)) {
-    return `En cumpleaños la parrilla está incluida. Para turnos comunes nocturnos tiene un consumo mínimo de $50.000; para los diurnos, podés consultarlo por acá:\n${BIRTHDAY_CONTACT_URL}`;
+    const formatted = new Intl.NumberFormat('es-AR').format(consumoMinimoAsador || 50000);
+    return `En cumpleaños la parrilla está incluida. Para turnos comunes nocturnos tiene un consumo mínimo de $${formatted}; para los diurnos, podés consultarlo por acá:\n${BIRTHDAY_CONTACT_URL}`;
   }
 
   if (/\b(pechera|pecheras|chaleco|chalecos)\b/.test(normalized)) {
@@ -1372,7 +1374,17 @@ async function continueFlow({
     });
   }
 
-  const faq = faqAnswer(text);
+  let consumoMinimo = 50000;
+  if (/\b(parrilla|parrillas|asado)\b/i.test(normalizeText(text))) {
+    try {
+      const canchas = await listarCanchas();
+      consumoMinimo = canchas?.consumo_minimo_asador ?? obtenerConsumoMinimoAsador() ?? 50000;
+    } catch {
+      consumoMinimo = obtenerConsumoMinimoAsador() ?? 50000;
+    }
+  }
+
+  const faq = faqAnswer(text, consumoMinimo);
   if (faq) {
     return answerFaqWithoutInterruptingFlow({
       answer: faq,

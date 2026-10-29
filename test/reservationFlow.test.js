@@ -83,6 +83,22 @@ test('responde sobre la parrilla y vuelve al menu cuando no hay un flujo activo'
   assert.match(result.replies[0], /1\. Buscar un turno/i);
 });
 
+test('responde sobre la parrilla con el consumo minimo dinamico de la API', async () => {
+  const canchas = [{ _id: 1, NOMBRE: 'Fútbol 5', PRECIO: 30000 }];
+  canchas.consumo_minimo_asador = 60000;
+  const result = await handleReservationFlow({
+    ...baseInput,
+    text: '¿Tienen parrilla?',
+    reservasApi: fakeApi({
+      listarCanchas: async () => canchas,
+      obtenerConsumoMinimoAsador: () => 60000
+    })
+  });
+
+  assert.equal(result.state?.step, 'main_menu');
+  assert.match(result.replies[0], /60\.000/);
+});
+
 test('responde recordatorio de senia no reembolsable y agradece aviso al no asistir', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

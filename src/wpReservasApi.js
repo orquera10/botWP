@@ -87,7 +87,15 @@ export function createReservasApi(config = {}) {
     configured: () => Boolean(resolvedConfig.baseUrl && resolvedConfig.apiKey),
     async listarCanchas() {
       const data = await request(resolvedConfig, 'canchas');
-      return data.canchas || [];
+      const canchas = data.canchas || [];
+      if (typeof data.consumo_minimo_asador === 'number') {
+        resolvedConfig.consumoMinimoAsador = data.consumo_minimo_asador;
+        canchas.consumo_minimo_asador = data.consumo_minimo_asador;
+      }
+      return canchas;
+    },
+    obtenerConsumoMinimoAsador() {
+      return resolvedConfig.consumoMinimoAsador ?? 50000;
     },
     async listarTerminos({ tipo = 'turno', cancha } = {}) {
       const data = await request(resolvedConfig, 'terminos', { params: { tipo, cancha } });
@@ -159,3 +167,4 @@ export const consultarCliente = (...args) => activeApi().consultarCliente(...arg
 export const crearCliente = (...args) => activeApi().crearCliente(...args);
 export const crearReserva = (...args) => activeApi().crearReserva(...args);
 export const notificarCancelacion = (...args) => activeApi().notificarCancelacion(...args);
+export const obtenerConsumoMinimoAsador = (...args) => activeApi().obtenerConsumoMinimoAsador?.(...args) ?? 50000;

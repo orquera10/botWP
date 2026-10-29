@@ -453,7 +453,7 @@ function faqAnswer(text, consumoMinimoAsador = 50000) {
   }
 
   if (/\b(no (?:vamos a poder|voy a poder|vamos|voy) ir|no llego a ir|cancelo el turno|cancelar mi turno|cancelo mi turno|libero la cancha|no voy a asistir|no asistire|no asistiremos)\b/.test(normalized)) {
-    return 'Por reglamento, la seña de turnos comunes no es reembolsable ni modificable y los turnos no se reprograman. Muchas gracias por avisar para que el complejo pueda liberar la cancha.';
+    return 'Muchas gracias por avisar para liberar la cancha. Según el reglamento oficial: en turnos comunes la seña no es reembolsable ni modificable y los turnos no se reprograman; en cumpleaños la seña es reembolsable únicamente hasta 72 horas previas al evento.';
   }
 
   if (/\b(wifi|estacionamiento|vestuario|vestuarios|ducha|duchas|mascota|mascotas|decoracion|decorar|torta|comida|mesas|sillas|musica|parlante|parlantes|aire acondicionado|calefaccion|payaso|payasos|animador|animadores|animacion|mago|magos|show|shows|titere|titeres)\b/.test(normalized)) {

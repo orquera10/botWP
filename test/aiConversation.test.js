@@ -857,3 +857,28 @@ test('inquiries about grill reflect dynamic minimum consumption configured in AP
   assert.match(output.replies[0], /\$60\.000/);
 });
 
+test('inquiries about venue location include official address in Barrio Huaico in prompt', async () => {
+  const canchas = [{ id: 1, nombre: 'Fútbol 5' }];
+  canchas.direccion = 'Juana Azurduy de Padilla 2433, Barrio Huaico, San Salvador de Jujuy';
+  const api = {
+    listarCanchas: async () => canchas,
+    obtenerDireccion: () => 'Juana Azurduy de Padilla 2433, Barrio Huaico, San Salvador de Jujuy'
+  };
+  const requests = [];
+  const output = await handleAiConversation({
+    ...base,
+    canonicalJid: '5493881234567@s.whatsapp.net',
+    text: 'La cancha queda en huaico no',
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      reply('Sí, estamos en Juana Azurduy de Padilla 2433, en barrio Huaico (San Salvador de Jujuy).')
+    ], requests)
+  });
+
+  const systemPrompt = requests[0]?.systemInstruction?.parts?.[0]?.text || '';
+  assert.match(systemPrompt, /Juana Azurduy de Padilla 2433/);
+  assert.match(systemPrompt, /Barrio Huaico/);
+  assert.match(systemPrompt, /PROHIBIDO negar que queda en Huaico/);
+  assert.match(output.replies[0], /Juana Azurduy de Padilla 2433/);
+});
+

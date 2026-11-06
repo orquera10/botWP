@@ -8,6 +8,7 @@ import {
   registrarChat,
   listarCanchas,
   obtenerConsumoMinimoAsador,
+  obtenerDireccion,
   reservasApiConfigured,
   withReservasApi
 } from './wpReservasApi.js';
@@ -408,8 +409,12 @@ function mainMenuMessage(businessSettings = {}) {
   return userMenuMessage(businessSettings, 'Volvimos al menu principal.');
 }
 
-function faqAnswer(text, consumoMinimoAsador = 50000) {
+function faqAnswer(text, consumoMinimoAsador = 50000, direccionNegocio = 'Juana Azurduy de Padilla 2433, Barrio Huaico (Los Huaicos), San Salvador de Jujuy') {
   const normalized = normalizeText(text);
+
+  if (/\b(donde (?:queda|estan|quedan|es)|ubicacion|direccion|como llego|en huaico|queda en huaico|estan en huaico|queda en)\b/.test(normalized)) {
+    return `Estamos en ${direccionNegocio}.`;
+  }
 
   if (/\b(pelotero|peloteros|cama elastica|camas elasticas|inflable|inflables)\b/.test(normalized)) {
     return 'No está permitido ingresar peloteros, camas elásticas, inflables ni otros aparatos o juegos.';
@@ -1384,7 +1389,8 @@ async function continueFlow({
     }
   }
 
-  const faq = faqAnswer(text, consumoMinimo);
+  const direccionNegocio = businessSettings?.address || obtenerDireccion() || 'Juana Azurduy de Padilla 2433, Barrio Huaico (Los Huaicos), San Salvador de Jujuy';
+  const faq = faqAnswer(text, consumoMinimo, direccionNegocio);
   if (faq) {
     return answerFaqWithoutInterruptingFlow({
       answer: faq,

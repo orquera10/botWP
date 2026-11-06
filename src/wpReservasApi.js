@@ -92,10 +92,17 @@ export function createReservasApi(config = {}) {
         resolvedConfig.consumoMinimoAsador = data.consumo_minimo_asador;
         canchas.consumo_minimo_asador = data.consumo_minimo_asador;
       }
+      if (data.direccion) {
+        resolvedConfig.direccion = data.direccion;
+        canchas.direccion = data.direccion;
+      }
       return canchas;
     },
     obtenerConsumoMinimoAsador() {
       return resolvedConfig.consumoMinimoAsador ?? 50000;
+    },
+    obtenerDireccion() {
+      return resolvedConfig.direccion || 'Juana Azurduy de Padilla 2433, Barrio Huaico, San Salvador de Jujuy';
     },
     async listarTerminos({ tipo = 'turno', cancha } = {}) {
       const data = await request(resolvedConfig, 'terminos', { params: { tipo, cancha } });
@@ -168,3 +175,4 @@ export const crearCliente = (...args) => activeApi().crearCliente(...args);
 export const crearReserva = (...args) => activeApi().crearReserva(...args);
 export const notificarCancelacion = (...args) => activeApi().notificarCancelacion(...args);
 export const obtenerConsumoMinimoAsador = (...args) => activeApi().obtenerConsumoMinimoAsador?.(...args) ?? 50000;
+export const obtenerDireccion = (...args) => activeApi().obtenerDireccion?.(...args) ?? 'Juana Azurduy de Padilla 2433, Barrio Huaico, San Salvador de Jujuy';

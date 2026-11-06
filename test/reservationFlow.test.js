@@ -111,6 +111,18 @@ test('responde recordatorio de senia no reembolsable y agradece aviso al no asis
   assert.match(result.replies[0], /gracias por avisar/i);
 });
 
+test('responde direccion oficial en barrio Huaico al consultar ubicacion', async () => {
+  const result = await handleReservationFlow({
+    ...baseInput,
+    text: 'La cancha queda en huaico no',
+    reservasApi: fakeApi()
+  });
+
+  assert.equal(result.state?.step, 'main_menu');
+  assert.match(result.replies[0], /Juana Azurduy de Padilla 2433/i);
+  assert.match(result.replies[0], /Huaico/i);
+});
+
 test('consulta y muestra los precios actuales de las canchas', async () => {
   const result = await handleReservationFlow({
     ...baseInput,

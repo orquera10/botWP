@@ -282,6 +282,7 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   }
   let courts;
   let consumoMinimoAsador = (typeof api?.obtenerConsumoMinimoAsador === 'function' ? api.obtenerConsumoMinimoAsador() : null) ?? 50000;
+  let direccionNegocio = (typeof api?.obtenerDireccion === 'function' ? api.obtenerDireccion() : null) || businessSettings.address || 'Juana Azurduy de Padilla 2433, Barrio Huaico (Los Huaicos), San Salvador de Jujuy';
   async function listCourts() {
     if (!courts) {
       const result = await api.listarCanchas();
@@ -290,6 +291,11 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
         consumoMinimoAsador = result.consumo_minimo_asador;
       } else if (typeof api?.obtenerConsumoMinimoAsador === 'function') {
         consumoMinimoAsador = api.obtenerConsumoMinimoAsador() ?? 50000;
+      }
+      if (result?.direccion) {
+        direccionNegocio = result.direccion;
+      } else if (typeof api?.obtenerDireccion === 'function') {
+        direccionNegocio = api.obtenerDireccion() || direccionNegocio;
       }
     }
     return courts;
@@ -468,7 +474,10 @@ Solicitud de pago actual: ${JSON.stringify(next.checkout || null)}. Si está pen
 Estado de la verificación automática del pago: ${paymentRefresh}. El estado actual del sistema prevalece sobre mensajes anteriores del historial que decían pendiente. Si está confirmada, no pidas pagar la seña ni avisar cuando pague; el saldo restante es otra cosa. Ante “dale, gracias”, un agradecimiento o una despedida, respondé cordial y breve sin repetir el pago ni agregar tareas o preguntas innecesarias. Nunca digas “avisame si pagás”: la acreditación es automática. Si no se pudo verificar, no afirmes que pagó ni que falta pagar; un agradecimiento se responde normalmente sin hablar del estado.
 Pasá el WhatsApp de consultas específicas (${specificContactUrl}, mediante consultas_especificas) ÚNICAMENTE cuando pregunten algo que la IA NO puede responder con el reglamento ni con las herramientas: por ejemplo, grupos de más de 16 personas (ej. 22 personas), alquilar 2 canchas o torneos, qué tamaño o qué incluye en particular la Cancha Promo, cuánto cuestan los adicionales cuyo monto no figura en el reglamento (vajilla, mantelería, salón superior, persona o jugador adicional), cómo o cuándo pagar (“cancelar”) el saldo restante, llevar payasos, animadores, magos o shows externos (NO figuran en el reglamento: NUNCA inventes permisos ni digas que se puede; derivá siempre a consultas_especificas), o dudas operativas que no figuran en el reglamento (llevar carbón, disponibilidad de hielo, usar hornito o microondas). NUNCA digas "El cliente consulta por...": hablá siempre al cliente en segunda persona ("Podés consultarlo por acá:") o simplemente pasale el WhatsApp de dudas específicas. En cambio, si la pregunta YA tiene respuesta en el reglamento (ej. que están prohibidos los peloteros/inflables, que no se pueden ingresar bebidas, que la seña se paga solo por link de Mercado Pago o que en turnos comunes la seña no es reembolsable ni modificable), respondé directamente con el reglamento SIN usar consultas_especificas y SIN pasar el otro número.
 Parrilla / Asador: en cumpleaños está incluida. En turnos comunes nocturnos requiere un consumo mínimo en buffet/cantina de $${formattedMinimoAsador}; es consumo, no un alquiler adicional ni parte de la seña de cancha (si solo preguntan por parrilla en cumple o de noche, respondé esto directo sin pasar el otro WhatsApp). Únicamente para turnos comunes diurnos, o si preguntan por carbón/leña u otros detalles no especificados en el reglamento, derivá a ${specificContactUrl} usando consultas_especificas; nunca afirmes que pueden traer carbón por su cuenta ni inventes a qué hora empieza la noche ni apliques ese mínimo a cumpleaños. Si no está claro el tipo de turno o si es diurno/nocturno, explicá brevemente las diferencias o preguntá solo lo necesario.
-Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, information: businessSettings.aiBusinessInfo })}`;
+Ubicación / Dirección oficial del predio: ${direccionNegocio}.
+Si el cliente pregunta por la ubicación, dirección, cómo llegar o si queda en Huaico (por ejemplo: "la cancha queda en huaico no", "¿están en huaico?", "¿es en huaico?", "¿dónde están ubicados?", "¿dónde queda?", "¿cuál es la dirección?"): respondé SIEMPRE confirmando la dirección exacta con calidez: "Sí, estamos en Juana Azurduy de Padilla 2433, en barrio Huaico (San Salvador de Jujuy)."
+TERMINANTEMENTE PROHIBIDO negar que queda en Huaico o inventar ubicaciones ajenas (como Los Perales, El Progreso 1150 o cualquier otra calle o barrio falso). La única dirección real y oficial es Juana Azurduy de Padilla 2433, Barrio Huaico.
+Información del negocio: ${JSON.stringify({ welcomeMessage: businessSettings.welcomeMessage, catalogUrl, address: direccionNegocio, information: businessSettings.aiBusinessInfo || `Dirección / Ubicación: ${direccionNegocio}` })}`;
   const contents = [...next.history, { role: 'user', parts: [{ text: String(text) }] }];
   let direct;
   let media;

@@ -221,7 +221,9 @@ function defaultBusinessProfile() {
     adminApiUrl: process.env.ADMIN_API_URL || '',
     adminApiKey: process.env.ADMIN_API_KEY || '',
     settings: {
-      catalogUrl: process.env.CATALOG_URL || ''
+      catalogUrl: process.env.CATALOG_URL || '',
+      address: 'Juana Azurduy de Padilla 2433, Barrio Huaico, San Salvador de Jujuy',
+      aiBusinessInfo: 'Ubicación / Dirección: Juana Azurduy de Padilla 2433, Barrio Huaico (Los Huaicos), San Salvador de Jujuy. El predio queda en Huaico.'
     }
   };
 }
@@ -237,7 +239,17 @@ function applyBusinessProfile(session, business = defaultBusinessProfile()) {
   session.businessApiKey = business.apiKey || '';
   session.businessAdminApiUrl = business.adminApiUrl || '';
   session.businessAdminApiKey = business.adminApiKey || '';
-  session.businessSettings = business.settings || {};
+  const fallbackSettings = defaultBusinessProfile().settings;
+  session.businessSettings = {
+    ...fallbackSettings,
+    ...(business.settings || {})
+  };
+  if (!session.businessSettings.address) {
+    session.businessSettings.address = fallbackSettings.address;
+  }
+  if (!session.businessSettings.aiBusinessInfo) {
+    session.businessSettings.aiBusinessInfo = fallbackSettings.aiBusinessInfo;
+  }
   return session;
 }
 

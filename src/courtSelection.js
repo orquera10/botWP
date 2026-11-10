@@ -1,6 +1,6 @@
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-const EXPLICIT_COURT_PATTERN = /\b(cumple|cumpleanos|cancha\s+promo|(?:futbol|fut|f)\s*(?:5|6|7(?:\s*\/\s*8)?|8)|cancha\s+(?:de\s+)?(?:5|6|7(?:\s*\/\s*8)?|8|grande|entera|completa)|(?:5|6|7|8)\s*(?:vs?\.?|x|pa|contra)\s*(?:5|6|7|8))\b/;
+const EXPLICIT_COURT_PATTERN = /\b(cumple|cumpleanos|cancha\s+promo|(?:futbol|fut|f)\s*(?:5|6|7(?:\s*\/\s*8)?|8)|cancha\s+(?:de\s+|para\s+)?(?:5|6|7(?:\s*\/\s*8)?|8|grande|entera|completa)|(?:jugar\s+)?(?:para|de)\s+(?:5|6|7(?:\s*\/\s*8)?|8)\b|7\s*\/\s*8|(?:5|6|7|8)\s*(?:vs?\.?|x|pa|contra|por\s+lado|por\s+equipo)\s*(?:5|6|7|8)?)\b/;
 
 export function isGeneralDiscountQuery(text) {
   const value = normalize(text);

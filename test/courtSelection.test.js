@@ -83,7 +83,20 @@ test('explicit or previously supplied players and court types do not trigger ano
     'busco cancha para jugar 8x8 mañana',
     'queremos jugar 5 pa 5 hoy',
     'cancha entera para el viernes',
-    'queremos alquilar dos canchas para un torneo'
+    'queremos alquilar dos canchas para un torneo',
+    'Es para jugar para 7',
+    'para 7',
+    'para 8',
+    'para 5',
+    'para 6',
+    'cancha para 7',
+    'cancha para 8',
+    'cancha para 5',
+    'cancha para 6',
+    'de 7',
+    'de 8',
+    '7 por lado',
+    '8 por lado'
   ]) assert.equal(needsCourtSelection(text), false, text);
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'user', parts: [{ text: 'somos 10' }] }]), false);
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'model', parts: [{ text: '¿Cuántos van a jugar?' }] }, { role: 'user', parts: [{ text: '10' }] }]), false);

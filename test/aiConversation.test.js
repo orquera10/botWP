@@ -882,3 +882,56 @@ test('inquiries about venue location include official address in Barrio Huaico i
   assert.match(output.replies[0], /Juana Azurduy de Padilla 2433/);
 });
 
+test('responding es para jugar para 7 after asking for today preserves today date and maps to futbol 7/8', async () => {
+  const canchas = [
+    { id: 5, nombre: 'Fútbol 5' },
+    { id: 6, nombre: 'Fútbol 6' },
+    { id: 7, nombre: 'Fútbol 7/8' },
+    { id: 8, nombre: 'Cumpleaños', duracion_fija: 3 }
+  ];
+  const api = {
+    listarCanchas: async () => canchas,
+    consultarDisponibilidad: async ({ fecha, cancha }) => {
+      assert.equal(fecha, '2026-11-09');
+      if (cancha === 7) return [{ fecha, inicio: '20:00', fin: '21:00', total: 80000, minimo_senia: 40000 }];
+      return [{ fecha, inicio: '19:00', fin: '20:00' }];
+    }
+  };
+
+  // Turn 1: user asks for today
+  const t1 = await handleAiConversation({
+    ...base,
+    now: new Date('2026-11-09T17:02:00-03:00').getTime(),
+    text: 'Hola buenas tardes tienen la cancha disponible para el día de hoy??',
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      reply('¡Hola! 😊 Sí, hay disponibilidad para hoy en Fútbol 5, 6, 7/8 y cumpleaños. ¿Cuántos van a jugar o es para un cumple?')
+    ])
+  });
+  assert.equal(t1.state.requestedDate, '2026-11-09');
+
+  // Turn 2: user says "Es para jugar para 7"
+  const requests = [];
+  const t2 = await handleAiConversation({
+    ...base,
+    now: new Date('2026-11-09T17:05:00-03:00').getTime(),
+    text: 'Es para jugar para 7',
+    state: t1.state,
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      call('disponibilidad', { fecha: '2026-11-09', cancha: 7, duracion: 1 }),
+      reply('¡Perfecto, para Fútbol 7/8! Para hoy tenemos disponibilidad de 20:00 a 21:00. ¿Te sirve ese horario?')
+    ], requests)
+  });
+
+  // Verification
+  assert.equal(t2.state.requestedDate, '2026-11-09');
+  const systemPrompt = requests[0]?.systemInstruction?.parts?.[0]?.text || '';
+  assert.match(systemPrompt, /TERMINANTEMENTE PROHIBIDO asociar "para 7" con Fútbol 6/);
+  assert.match(systemPrompt, /FÚTBOL 7\/8/);
+  assert.match(systemPrompt, /Fecha elegida explícitamente por el cliente: 2026-11-09 \(HOY\)/);
+  assert.doesNotMatch(systemPrompt, /2026-11-07/);
+  assert.match(t2.replies[0], /Fútbol 7\/8/);
+  assert.doesNotMatch(t2.replies[0], /30 días de anticipación/);
+});
+

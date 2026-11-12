@@ -51,3 +51,36 @@ test('a voice note is downloaded, converted and transcribed with the configured 
 test('oversized notes are rejected before download or Gemini', async () => {
   await assert.rejects(transcribeVoiceMessage({ message: { message: { audioMessage: { seconds: 61 } } }, download: () => assert.fail('No download') }), /Audio too long/);
 });
+
+test('a voice note is transcribed via REST generateContent when configured with gemini-3.1-flash-lite', async () => {
+  const previous = process.env.GEMINI_MODEL;
+  process.env.GEMINI_MODEL = 'gemini-3.1-flash-lite';
+  try {
+    let calledUrl = '';
+    let sentMime = '';
+    const text = await transcribeVoiceMessage({
+      message: { message: { audioMessage: { seconds: 4 } } },
+      key: 'voice-lite-test',
+      download: async () => Buffer.from('ogg'),
+      convert: async () => Buffer.from('pcm'),
+      transportFactory: () => assert.fail('Live transport should not be used for flash-lite'),
+      fetchImpl: async (url, options) => {
+        calledUrl = url;
+        const body = JSON.parse(options.body);
+        const inline = body.contents[0].parts.find(p => p.inlineData)?.inlineData;
+        sentMime = inline?.mimeType;
+        assert.ok(Buffer.from(inline.data, 'base64').subarray(0, 4).toString() === 'RIFF');
+        return {
+          ok: true,
+          json: async () => ({ candidates: [{ content: { parts: [{ text: 'Quiero fútbol 7 para hoy a las 21.' }] } }] })
+        };
+      }
+    });
+    assert.match(calledUrl, /models\/gemini-3\.1-flash-lite:generateContent/);
+    assert.equal(sentMime, 'audio/wav');
+    assert.equal(text, 'Quiero fútbol 7 para hoy a las 21.');
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = previous;
+  }
+});

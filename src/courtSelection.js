@@ -35,16 +35,18 @@ export function needsCourtSelection(text, history = [], options = {}) {
   if (/\b(tipos|opciones|todas|cuales|que canchas|torneos?|olimpiadas?|(?:dos|2|ambas)\s+canchas)\b/.test(current)) return false;
 
   const cleanEvidence = evidence.replace(/\b(?:no|sin|nada de)\s+(?:quiero\s+)?cancha\s+promo\b/g, '');
-  if (EXPLICIT_COURT_PATTERN.test(cleanEvidence) || /\b(somos\s+\d+|\d+\s*(?:personas|jugadores|jugadoras)|para\s+\d+\s*(?:personas|jugadores)|torneos?|olimpiadas?|(?:dos|2|ambas)\s+canchas)\b/.test(cleanEvidence)) return false;
+  if (EXPLICIT_COURT_PATTERN.test(cleanEvidence) || /\b(somos\s+\d+(?:\s*(?:[/–-]|a|o)\s*\d+)?|\d+(?:\s*(?:[/–-]|a|o)\s*\d+)?\s*(?:personas|jugadores|jugadoras|chicos|chicas|nenes|ni[ñn]os)|para\s+\d+(?:\s*(?:[/–-]|a|o)\s*\d+)?\s*(?:personas|jugadores)|10\s*[/–-]\s*12|14\s*[/–-]\s*16|5\s*[/–-]\s*6|torneos?|olimpiadas?|(?:dos|2|ambas)\s+canchas)\b/.test(cleanEvidence)) return false;
+
+  const COUNT_ANSWER_PATTERN = /^(?:somos\s+)?(?:\d{1,2}(?:\s*(?:[/–-]|a|o)\s*\d{1,2})?|\d{1,2}\s*(?:personas|jugadores|chicos))[.! ]*$/;
 
   // A bare count is meaningful only after the bot asked how many players.
   for (let i = 1; i < history.length; i++) {
     const previous = normalize(history[i - 1].parts?.map(part => part.text || '').join(' '));
     const answer = normalize(history[i].parts?.map(part => part.text || '').join(' '));
-    if (history[i].role === 'user' && /cuantos|cuantas|jugadores|personas/.test(previous) && /^\d{1,2}[.! ]*$/.test(answer)) return false;
+    if (history[i].role === 'user' && /cuantos|cuantas|jugadores|personas/.test(previous) && COUNT_ANSWER_PATTERN.test(answer)) return false;
   }
   if (history.length > 0) {
-    if (history[history.length - 1].role === 'model' && /cuantos|cuantas|jugadores|personas/.test(lastModel) && /^\d{1,2}[.! ]*$/.test(current)) return false;
+    if (history[history.length - 1].role === 'model' && /cuantos|cuantas|jugadores|personas/.test(lastModel) && COUNT_ANSWER_PATTERN.test(current)) return false;
   }
 
   return true;

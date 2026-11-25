@@ -96,10 +96,19 @@ test('explicit or previously supplied players and court types do not trigger ano
     'de 7',
     'de 8',
     '7 por lado',
-    '8 por lado'
+    '8 por lado',
+    '10/12',
+    '10-12',
+    '10 a 12',
+    'somos 10/12',
+    'para 10/12',
+    '10/12 personas'
   ]) assert.equal(needsCourtSelection(text), false, text);
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'user', parts: [{ text: 'somos 10' }] }]), false);
+  assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'user', parts: [{ text: 'somos 10/12' }] }]), false);
   assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'model', parts: [{ text: '¿Cuántos van a jugar?' }] }, { role: 'user', parts: [{ text: '10' }] }]), false);
+  assert.equal(needsCourtSelection('quiero cancha mañana', [{ role: 'model', parts: [{ text: '¿Cuántos van a jugar?' }] }, { role: 'user', parts: [{ text: '10/12' }] }]), false);
+  assert.equal(needsCourtSelection('10/12', [{ role: 'model', parts: [{ text: '¿Cuántos van a jugar?' }] }]), false);
 });
 
 test('requested hour when occupied across all courts alerts that the specific hour is occupied', async () => {

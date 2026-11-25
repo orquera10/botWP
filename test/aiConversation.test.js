@@ -935,3 +935,49 @@ test('responding es para jugar para 7 after asking for today preserves today dat
   assert.doesNotMatch(t2.replies[0], /30 días de anticipación/);
 });
 
+test('responding 10/12 to cuantos van a jugar treats it as player count and does not interpret it as December 10 date', async () => {
+  const canchas = [
+    { id: 1, nombre: 'Fútbol 5' },
+    { id: 2, nombre: 'Fútbol 6' },
+    { id: 7, nombre: 'Fútbol 7/8' },
+    { id: 8, nombre: 'Cumpleaños', duracion_fija: 3 }
+  ];
+  const api = {
+    listarCanchas: async () => canchas,
+    consultarDisponibilidad: async () => []
+  };
+
+  // Turn 1: user says "Reserva"
+  const t1 = await handleAiConversation({
+    ...base,
+    now: new Date('2026-11-25T16:54:00-03:00').getTime(),
+    text: 'Reserva',
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      reply('¡Hola! 😊 Te ayudo a reservar tu cancha. ¿Para qué día y hora estás buscando, y cuántos van a jugar?')
+    ])
+  });
+  assert.equal(t1.state.requestedDate, undefined);
+
+  // Turn 2: user says "10/12" (meaning 10 a 12 jugadores)
+  const requests = [];
+  const t2 = await handleAiConversation({
+    ...base,
+    now: new Date('2026-11-25T16:55:00-03:00').getTime(),
+    text: '10/12',
+    state: t1.state,
+    reservasApi: api,
+    fetchImpl: fakeGemini([
+      reply('¡Perfecto! Para 10 a 12 jugadores pueden elegir Fútbol 5 o Fútbol 6. ¿Para qué fecha y horario les gustaría reservar?')
+    ], requests)
+  });
+
+  // Verify that requestedDate was NOT set to 2026-12-10
+  assert.equal(t2.state.requestedDate, undefined);
+  const systemPrompt = requests[0]?.systemInstruction?.parts?.[0]?.text || '';
+  assert.match(systemPrompt, /Las expresiones "10\/12", "10 a 12", "10 o 12", "10-12"/);
+  assert.match(systemPrompt, /¡TERMINANTEMENTE PROHIBIDO interpretar "10\/12" como una fecha de calendario/);
+  assert.doesNotMatch(t2.replies[0], /10 de diciembre/);
+});
+
+

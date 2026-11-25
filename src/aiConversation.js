@@ -195,7 +195,19 @@ export async function handleAiConversation({ state, text, canonicalJid, reservas
   // Preserve explicit day changes independently of the model's shortened history.
   const explicitIso = String(text).match(/\b(\d{4}-\d{2}-\d{2})\b/);
   const explicitMonthName = normalize(text).match(/\b(?:(?:el|para\s+(?:el\s+)?|psrs\s+(?:el\s+)?|del?)\s+)?(\d{1,2})\s+(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)\b(?:\s+(?:del?\s+)?(\d{4}))?/);
-  const explicitDayMonth = String(text).match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/);
+  const rawDayMonth = String(text).match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/);
+  const isCourtOrPlayersRange = Boolean(
+    rawDayMonth && !rawDayMonth[3] && (
+      (/\b(?:somos|entre|de|jugar)\s+\d{1,2}\s*\/\s*\d{1,2}\b/i.test(normalize(text))) ||
+      (/\bpara\s+\d{1,2}\s*\/\s*\d{1,2}\b/i.test(normalize(text)) && !/\bpara\s+el\s+\d{1,2}\/\d{1,2}\b/i.test(normalize(text))) ||
+      (/\b\d{1,2}\s*\/\s*\d{1,2}\s*(?:personas|jugadores|jugadoras|chicos|chicas|nenes|ni[ñn]os|adultos|equipos|por\s+lado|por\s+equipo|vs?\.?)\b/i.test(normalize(text))) ||
+      (['7/8', '5/6', '10/12', '14/16'].includes(`${Number(rawDayMonth[1])}/${Number(rawDayMonth[2])}`) &&
+       !/\b(?:el|dia|fecha)\s+\d{1,2}\/\d{1,2}\b/i.test(normalize(text)) &&
+       !/\b\d{1,2}\/\d{1,2}\s*(?:a\s+las?|de\s+\d{1,2}|hs|horas?|[:.]\d{2})\b/i.test(normalize(text))) ||
+      /^\s*\d{1,2}\s*\/\s*\d{1,2}\s*[.!?]*$/.test(normalize(text))
+    )
+  );
+  const explicitDayMonth = (rawDayMonth && !isCourtOrPlayersRange && Number(rawDayMonth[1]) >= 1 && Number(rawDayMonth[1]) <= 31 && Number(rawDayMonth[2]) >= 1 && Number(rawDayMonth[2]) <= 12) ? rawDayMonth : null;
   const rawDayMatch = normalize(text).match(/\b(?:para\s+el\s+|(?:el\s+)?dia\s+)(\d{1,2})\b(?![/-]|\s*(?:a[ñn]os?|personas?|jugadores?|jugadoras?|chicos?|ni[ñn]os?|nenes?|equipos?|horas?|hs|min|minutos?|por\s+lado|por\s+equipo|vs?\.?|x|pa|contra|de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre))\b)/);
   const isCourtOrSoccerNum = rawDayMatch && ['5', '6', '7', '8'].includes(rawDayMatch[1]) && !/\bdia\s+\d{1,2}\b/.test(normalize(text)) && /\b(?:jugar|cancha|futbol|fut|f[5-8]|equipo)\b/.test(normalize(text));
   const dayMatch = (rawDayMatch && !isCourtOrSoccerNum) ? rawDayMatch : null;
@@ -458,6 +470,9 @@ La equivalencia de modalidades de fútbol y canchas es ESTRICTA:
 - Cancha FÚTBOL 6 (ID de Fútbol 6): Las expresiones "para 6", "de 6", "fútbol 6", "fut 6", "cancha para 6", "cancha de 6", "es para 6", "jugar para 6", "6 vs 6", "6 por lado", "6 por equipo" o "somos 12" se refieren a FÚTBOL 6 (incluye 12 jugadores).
 - Cancha FÚTBOL 5 (ID de Fútbol 5): Las expresiones "para 5", "de 5", "fútbol 5", "fut 5", "cancha para 5", "cancha de 5", "es para 5", "jugar para 5", "5 vs 5", "5 por lado", "5 por equipo" o "somos 10" se refieren a FÚTBOL 5 (incluye 10 jugadores).
 - Si el cliente responde únicamente un número cuando preguntaste cuántos van a jugar o qué cancha buscan: 7, 8, 14 o 16 corresponde a Fútbol 7/8; 6 o 12 corresponde a Fútbol 6; 5 o 10 corresponde a Fútbol 5.
+- Las expresiones "10/12", "10 a 12", "10 o 12", "10-12", "somos 10/12" o "para 10/12" se refieren SIEMPRE a la CANTIDAD DE JUGADORES (entre 10 y 12 personas, adecuado para Fútbol 5 —hasta 10 jugadores— o Fútbol 6 —hasta 12 jugadores—), NUNCA a una fecha de calendario (como el 10 de diciembre).
+  ¡TERMINANTEMENTE PROHIBIDO interpretar "10/12" como una fecha de calendario o como 10 de diciembre! Si el cliente responde "10/12", confirmá que para 10 a 12 jugadores pueden elegir Fútbol 5 o Fútbol 6, y consultale para qué fecha y horario les gustaría reservar (o para cuál de las dos prefieren si la fecha ya estaba definida). NUNCA vuelvas a preguntar "¿Cuántos van a jugar?" si ya te dijeron "10/12".
+- Las expresiones con barra como "7/8", "5/6" o "14/16" se refieren a modalidades de cancha o cantidad de jugadores (Fútbol 7/8, Fútbol 5 o 6, o 14 a 16 jugadores), NUNCA a fechas de calendario (como 7 de agosto o 5 de junio).
 - La expresión "para 7", "para 5", "para 6" o "para 8" (o "es para jugar para X") se refiere SIEMPRE a la CANCHA o modalidad de juego, NUNCA a una fecha (como el día 7 del mes o dentro de 7 días). Si la fecha de la consulta ya estaba definida (como "hoy" o cualquier otra fecha), NUNCA cambies la fecha elegida ni invoques reglas de anticipación (como los 30 días de anticipación). Mantené la fecha ya definida (ej. hoy) y consultá disponibilidad para esa cancha en esa misma fecha.
 - Para “somos 16” corresponde UNA cancha de Fútbol 7/8: no digas que falta capacidad ni propongas dos canchas. Si el grupo supera los 16 jugadores de cancha (por ejemplo 20 o 22 personas), o si piden alquilar 2 canchas a la vez, olimpiadas o un torneo/evento especial, informá que la cancha más grande (Fútbol 7/8) incluye hasta 16 jugadores (exceder esa cantidad tiene costo extra por jugador adicional) y usá SIEMPRE consultas_especificas para que se comuniquen al WhatsApp de dudas específicas (${specificContactUrl}), donde los atiende una persona. Confirmá cancha y horario con el listado real. No asumas que la Cancha Promo tiene una capacidad o condición determinada si no está informada; si preguntan qué es o qué incluye la Cancha Promo, informá lo que figura en el reglamento general (pecheras y pelota de medio pique) y derivá con consultas_especificas para confirmar el detalle exacto.
 Avanzá de a un paso, tanto en texto como en notas de voz. Si pide turno para un día y todavía no sabemos cancha ni jugadores:
